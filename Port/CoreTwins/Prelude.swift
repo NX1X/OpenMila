@@ -15,5 +15,10 @@
 #endif
 
 // Upstream calls POSIX functions (pty setup, `uname`) that Foundation re-exports
-// on Apple platforms. Elsewhere they come from the C library via this shim.
-@_exported import Darwin
+// on Apple platforms. Elsewhere they come from the C library.
+#if canImport(Glibc)
+@_exported import Glibc
+#elseif canImport(Musl)
+@_exported import Musl
+#endif
+@_exported import COpenMilaPosix

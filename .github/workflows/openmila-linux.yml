@@ -1,0 +1,50 @@
+# Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
+#
+# OpenMila's Linux pipeline. The logic lives in ci/run.sh and the environment in
+# ci/Dockerfile, so this file only wires them to GitHub. A Dagger module will
+# call the same script; nothing here should grow beyond glue.
+name: OpenMila Linux
+
+on:
+  push:
+    branches: [main, "port/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openmila-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Build the CI image (base pinned by digest in ci/Dockerfile)
+        run: docker build -t openmila-ci:local -f ci/Dockerfile ci
+
+      - name: Fetch the tiny Whisper model for the end-to-end check
+        run: |
+          mkdir -p "$RUNNER_TEMP/models"
+          curl -fL --retry 4 -o "$RUNNER_TEMP/models/ggml-tiny.bin" \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+          echo "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21  $RUNNER_TEMP/models/ggml-tiny.bin" | sha256sum -c -
+
+      - name: Run the pipeline
+        run: |
+          docker run --rm \
+            -v "$PWD":/src:ro \
+            -v "$RUNNER_TEMP/models":/models:ro \
+            -e OPENMILA_E2E_MODEL=/models/ggml-tiny.bin \
+            openmila-ci:local bash -c '
+              set -e
+              mkdir -p /work/repo
+              cd /src && tar --exclude=./.build -cf - . | tar -xf - -C /work/repo
+              cd /work/repo && ci/run.sh all'

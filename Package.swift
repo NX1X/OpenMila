@@ -8,9 +8,16 @@
 // adds the platform layers under `Port/`.
 //
 // The shim targets below are literally named after Apple-only modules
-// (`Combine`, `OSLog`, `os`, `CryptoKit`, `Accelerate`, `SwiftUI`, `Darwin`). Off macOS no system module of that
+// (`Combine`, `OSLog`, `os`, `CryptoKit`, `Accelerate`, `SwiftUI`). Off macOS no system module of that
 // name exists, so upstream's `import Combine` lines compile unchanged against
-// the open-source replacement. They must never be declared on macOS, where
+// the open-source replacement.
+//
+// HAZARD: a shim's name also turns `canImport(<name>)` true for every package
+// in the build. Only shim a name no dependency tests for. `Darwin` is tested by
+// almost everything and must never be shimmed. OpenCombine tests `Combine`, which
+// is safe only because the shim depends on OpenCombine and so builds after it; if
+// OpenCombine is ever rebuilt with a stale Combine module on disk, clean first
+// (`swift package clean`). They must never be declared on macOS, where
 // they would shadow the real frameworks.
 import PackageDescription
 
@@ -51,8 +58,8 @@ let package = Package(
         .target(name: "os", dependencies: ["OpenMilaLogging"], path: "Port/Shims/os"),
         .target(name: "Accelerate", path: "Port/Shims/Accelerate"),
         .target(name: "SwiftUI", path: "Port/Shims/SwiftUI"),
-        .target(name: "CDarwinCompat", path: "Port/Shims/CDarwinCompat"),
-        .target(name: "Darwin", dependencies: ["CDarwinCompat"], path: "Port/Shims/Darwin"),
+        // pty prototypes glibc hides from Swift. Not a shim: the name is ours.
+        .target(name: "COpenMilaPosix", path: "Port/COpenMilaPosix"),
         .target(
             name: "CryptoKit",
             dependencies: [.product(name: "Crypto", package: "swift-crypto")],
@@ -90,7 +97,7 @@ let package = Package(
         .target(
             name: "Mila",
             dependencies: [
-                "Combine", "OSLog", "os", "CryptoKit", "Accelerate", "SwiftUI", "Darwin",
+                "Combine", "OSLog", "os", "CryptoKit", "Accelerate", "SwiftUI", "COpenMilaPosix",
                 .product(name: "MilaKit", package: "MilaKit"),
                 .product(name: "TranscriptionCore", package: "TranscriptionCore"),
             ],
@@ -100,7 +107,7 @@ let package = Package(
             exclude: [
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
-                "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI",
+                "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
@@ -137,7 +144,7 @@ let package = Package(
             path: ".",
             exclude: [
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
-                "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI",
+                "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",

@@ -3,8 +3,8 @@
 // Pseudo-terminal functions. glibc only declares them under _XOPEN_SOURCE, which
 // Swift's Glibc module map does not define, so they are invisible to Swift even
 // though libc exports them. These prototypes match glibc's own declarations.
-#ifndef CDARWINCOMPAT_H
-#define CDARWINCOMPAT_H
+#ifndef COPENMILAPOSIX_H
+#define COPENMILAPOSIX_H
 
 #if defined(__linux__)
 int posix_openpt(int flags);

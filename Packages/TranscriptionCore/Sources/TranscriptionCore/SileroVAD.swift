@@ -1,12 +1,13 @@
+// Modified by NX1X for OpenMila; see CHANGES.md.
 import Foundation
 import whisper
-#if canImport(os)
+#if canImport(os.log)
 import os.log
 private let vadLog = Logger(subsystem: "io.island.mila.TranscriptionCore", category: "SileroVAD")
 #endif
 
 @inline(__always) private func sileroNotice(_ message: String) {
-#if canImport(os)
+#if canImport(os.log)
     vadLog.notice("\(message, privacy: .public)")
 #endif
 }
