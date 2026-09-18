@@ -1,0 +1,734 @@
+import XCTest
+import MilaKit
+@testable import Mila
+
+@MainActor
+final class RecordingStoreTests: XCTestCase {
+
+    private var tempRoot: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MilaTests-\(UUID())", isDirectory: true)
+    }
+
+    override func tearDown() {
+        if let tempRoot { try? FileManager.default.removeItem(at: tempRoot) }
+        super.tearDown()
+    }
+
+    // MARK: - Orphan recovery
+
+    /// A capture that never received a frame must not come back. `AVAudioFile`
+    /// reserves a 4 KB header block on open, so an empty WAV is 4096 bytes —
+    /// well over the old 512-byte "skip empty files" guard, which is why every
+    /// empty capture reappeared as a `Recovered recording` row that transcribed
+    /// to nothing and settled at `.failed`.
+    func test_empty_orphan_wav_is_not_recovered() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        store.add(Recording(title: "Real", source: .microphone, audioFileName: "real.wav"))
+        let empty = store.recordingsDirectory.appendingPathComponent("empty-capture.wav")
+        try Data(count: RecordingStore.emptyWAVByteCount).write(to: empty)
+
+        let relaunched = RecordingStore(rootDirectory: tempRoot)
+
+        XCTAssertEqual(relaunched.recordings.map(\.title), ["Real"],
+                       "an empty capture was resurrected as a phantom recording")
+        XCTAssertTrue(relaunched.consumePendingRecoveryIDs().isEmpty,
+                      "an empty capture must not be enqueued for transcription either")
+    }
+
+    /// The other half of the same guard: a crashed recording that DID capture
+    /// audio still has to be recovered. Its header is unfinalized (it claims
+    /// zero frames), so the size on disk is the only usable signal.
+    func test_orphan_wav_with_audio_is_still_recovered() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        store.add(Recording(title: "Real", source: .microphone, audioFileName: "real.wav"))
+        let crashed = store.recordingsDirectory.appendingPathComponent("crashed.wav")
+        try Data(count: RecordingStore.emptyWAVByteCount + 1).write(to: crashed)
+
+        let relaunched = RecordingStore(rootDirectory: tempRoot)
+
+        XCTAssertEqual(relaunched.recordings.count, 2)
+        XCTAssertEqual(relaunched.recordings.first(where: { $0.audioFileName == "crashed.wav" })?.status,
+                       .pending)
+        XCTAssertEqual(relaunched.consumePendingRecoveryIDs().count, 1)
+    }
+
+    func test_store_persists_recordings_across_instances() throws {
+        let first = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertTrue(first.recordings.isEmpty)
+
+        let recording = Recording(
+            title: "Fixture",
+            duration: 3.14,
+            source: .microphone,
+            audioFileName: "fixture.wav"
+        )
+        first.add(recording)
+        XCTAssertEqual(first.recordings.count, 1)
+
+        let second = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertEqual(second.recordings.count, 1)
+        XCTAssertEqual(second.recordings.first?.id, recording.id)
+
+        second.permanentlyDelete(recording)
+
+        let third = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertTrue(third.recordings.isEmpty)
+    }
+
+    /// Regression: deleting an imported Voice Memo never stuck — the
+    /// importer dedups against the live store, and the source memo still
+    /// exists in the Voice Memos folder, so the next sync re-imported (and
+    /// re-transcribed) it. Permanent deletion must leave a persistent
+    /// tombstone the importer's dedup set includes.
+    func test_permanently_deleting_voice_memo_import_leaves_persistent_tombstone() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "Imported memo",
+                            source: .microphone,
+                            audioFileName: "memo.wav",
+                            voiceMemoUniqueID: "memo-unique-123")
+        store.add(rec)
+        XCTAssertTrue(store.voiceMemoTombstones.isEmpty)
+
+        store.permanentlyDelete(rec)
+        XCTAssertTrue(store.voiceMemoTombstones.contains("memo-unique-123"),
+                      "Deleting a voice-memo import must tombstone its unique ID")
+
+        // Survives a relaunch (the importer syncs on every launch).
+        let reloaded = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertTrue(reloaded.voiceMemoTombstones.contains("memo-unique-123"),
+                      "Tombstones must persist across store instances")
+    }
+
+    func test_setSpeakerName_sets_clears_and_persists() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "Meeting", source: .meeting,
+                            audioFileName: "meeting.wav",
+                            segments: [.init(start: 0, end: 1, text: "hi", speaker: "SPEAKER_00")])
+        store.add(rec)
+
+        store.setSpeakerName("  Daniel ", forSpeaker: "SPEAKER_00", recordingID: rec.id)
+        XCTAssertEqual(store.recordings.first?.speakerNames, ["SPEAKER_00": "Daniel"],
+                       "Name must be trimmed and stored keyed by the raw ID")
+
+        // Survives a relaunch via recordings.json.
+        let reloaded = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertEqual(reloaded.recordings.first?.speakerNames, ["SPEAKER_00": "Daniel"])
+
+        // nil (and empty/whitespace) clears the assignment.
+        reloaded.setSpeakerName(nil, forSpeaker: "SPEAKER_00", recordingID: rec.id)
+        XCTAssertEqual(reloaded.recordings.first?.speakerNames, [:])
+        reloaded.setSpeakerName("Noa", forSpeaker: "SPEAKER_00", recordingID: rec.id)
+        reloaded.setSpeakerName("   ", forSpeaker: "SPEAKER_00", recordingID: rec.id)
+        XCTAssertEqual(reloaded.recordings.first?.speakerNames, [:])
+    }
+
+    func test_setSpeakerName_regenerates_srt_sidecar_for_completed_recording() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "Meeting", source: .meeting,
+                            audioFileName: "meeting.wav",
+                            status: .completed,
+                            segments: [.init(start: 0, end: 1, text: "hi", speaker: "SPEAKER_00")])
+        store.add(rec)
+
+        store.setSpeakerName("Daniel", forSpeaker: "SPEAKER_00", recordingID: rec.id)
+
+        let srtURL = store.recordingsDirectory.appendingPathComponent("meeting.srt")
+        let srt = try String(contentsOf: srtURL, encoding: .utf8)
+        XCTAssertTrue(srt.contains("Daniel: hi"),
+                      "The on-disk .srt sidecar must be rewritten with the assigned name")
+    }
+
+    func test_permanently_deleting_non_import_leaves_no_tombstone() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "Mic recording", source: .microphone,
+                            audioFileName: "plain.wav")
+        store.add(rec)
+        store.permanentlyDelete(rec)
+        XCTAssertTrue(store.voiceMemoTombstones.isEmpty)
+    }
+
+    func test_soft_delete_moves_to_recently_deleted_and_restore_returns_it() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "X", source: .microphone, audioFileName: "x.wav")
+        store.add(rec)
+
+        XCTAssertTrue(store.recordings(in: .transcriptions).contains { $0.id == rec.id })
+        XCTAssertFalse(store.recordings(in: .recentlyDeleted).contains { $0.id == rec.id })
+
+        store.softDelete(rec)
+        XCTAssertFalse(store.recordings(in: .transcriptions).contains { $0.id == rec.id })
+        XCTAssertTrue(store.recordings(in: .recentlyDeleted).contains { $0.id == rec.id })
+
+        if let trashed = store.recordings.first(where: { $0.id == rec.id }) {
+            store.restore(trashed)
+        }
+        XCTAssertTrue(store.recordings(in: .transcriptions).contains { $0.id == rec.id })
+        XCTAssertFalse(store.recordings(in: .recentlyDeleted).contains { $0.id == rec.id })
+    }
+
+    func test_recordings_in_category_classifies_correctly() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let mic = Recording(title: "Voice Memo · Today", source: .microphone, audioFileName: "a.wav")
+        let dictation = Recording(title: "Dictation · Today", source: .microphone, audioFileName: "b.wav")
+        let meeting = Recording(title: "Standup", source: .meeting, audioFileName: "c.wav")
+        store.add(mic); store.add(dictation); store.add(meeting)
+
+        XCTAssertEqual(store.recordings(in: .transcriptions).count, 3)
+        XCTAssertEqual(store.recordings(in: .meetings).map(\.id), [meeting.id])
+        XCTAssertEqual(store.recordings(in: .dictations).map(\.id), [dictation.id])
+        XCTAssertEqual(store.recordings(in: .recentlyDeleted).count, 0)
+    }
+
+    func test_fresh_audio_url_is_unique_under_recordings_directory() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let a = store.freshAudioURL(suggestedName: "Hello")
+        let b = store.freshAudioURL(suggestedName: "Hello")
+
+        XCTAssertEqual(a.pathExtension, "wav")
+        XCTAssertTrue(a.path.contains("Recordings"))
+        XCTAssertTrue(a.lastPathComponent.hasPrefix("Hello "))
+        XCTAssertNotEqual(a.lastPathComponent, b.lastPathComponent)
+    }
+
+    func test_creating_store_creates_models_and_recordings_dirs() {
+        _ = RecordingStore(rootDirectory: tempRoot)
+        var isDir: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: tempRoot.appendingPathComponent("Recordings").path,
+            isDirectory: &isDir))
+        XCTAssertTrue(isDir.boolValue)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: tempRoot.appendingPathComponent("Models").path,
+            isDirectory: &isDir))
+        XCTAssertTrue(isDir.boolValue)
+    }
+
+    // MARK: - Rename
+
+    func test_rename_updates_title_and_persists_across_instances() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "Original", source: .microphone, audioFileName: "x.wav")
+        store.add(rec)
+
+        store.rename(rec, to: "Renamed")
+        XCTAssertEqual(store.recordings.first?.title, "Renamed")
+
+        let reloaded = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertEqual(reloaded.recordings.first?.title, "Renamed")
+    }
+
+    func test_rename_trims_whitespace_and_ignores_empty_input() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "Original", source: .microphone, audioFileName: "x.wav")
+        store.add(rec)
+
+        store.rename(rec, to: "  Trimmed  ")
+        XCTAssertEqual(store.recordings.first?.title, "Trimmed")
+
+        // Blank-only input must be a no-op so we never leave an empty row.
+        store.rename(rec, to: "   ")
+        XCTAssertEqual(store.recordings.first?.title, "Trimmed")
+    }
+
+    // MARK: - Folder CRUD
+
+    func test_create_folder_adds_and_sorts_alphabetically() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        store.createFolder("Zebra")
+        store.createFolder("apple")
+        store.createFolder("Mango")
+        XCTAssertEqual(store.folders, ["apple", "Mango", "Zebra"])
+    }
+
+    func test_create_folder_dedupes_case_insensitive_and_rejects_blank() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertEqual(store.createFolder("Work"), "Work")
+        XCTAssertEqual(store.createFolder("work"), "Work")  // dedupe — returns canonical
+        XCTAssertEqual(store.folders, ["Work"])
+        XCTAssertNil(store.createFolder("   "))
+        XCTAssertEqual(store.folders, ["Work"])
+    }
+
+    func test_folders_persist_across_store_instances() {
+        let first = RecordingStore(rootDirectory: tempRoot)
+        first.createFolder("Work")
+        first.createFolder("Personal")
+
+        let second = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertEqual(second.folders, ["Personal", "Work"])
+    }
+
+    func test_assign_recording_to_folder_filters_correctly() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec1 = Recording(title: "A", source: .microphone, audioFileName: "a.wav")
+        let rec2 = Recording(title: "B", source: .microphone, audioFileName: "b.wav")
+        store.add(rec1); store.add(rec2)
+        store.createFolder("Work")
+
+        store.assign(rec1, toFolder: "Work")
+        XCTAssertEqual(store.recordings(inFolder: "Work").map(\.id), [rec1.id])
+        XCTAssertTrue(store.recordings(inFolder: "Personal").isEmpty)
+    }
+
+    /// Regression: `assign` used to compare folder names case-sensitively
+    /// when its auto-create branch checked for an existing entry, which
+    /// let "work" + "Work" coexist depending on which path created each.
+    func test_assign_with_case_variant_reuses_existing_folder() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        store.createFolder("Work")
+        let rec = Recording(title: "A", source: .microphone, audioFileName: "a.wav")
+        store.add(rec)
+
+        store.assign(rec, toFolder: "work")
+        XCTAssertEqual(store.folders, ["Work"])
+        XCTAssertEqual(store.recordings.first?.folder, "Work")
+    }
+
+    func test_assign_to_new_folder_auto_creates_it() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "A", source: .microphone, audioFileName: "a.wav")
+        store.add(rec)
+        XCTAssertTrue(store.folders.isEmpty)
+
+        store.assign(rec, toFolder: "Drafts")
+        XCTAssertEqual(store.folders, ["Drafts"])
+        XCTAssertEqual(store.recordings(inFolder: "Drafts").map(\.id), [rec.id])
+    }
+
+    func test_assign_nil_unfiles_recording() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "A", source: .microphone, audioFileName: "a.wav")
+        store.add(rec)
+        store.assign(rec, toFolder: "Work")
+        XCTAssertEqual(store.recordings.first?.folder, "Work")
+
+        store.assign(rec, toFolder: nil)
+        XCTAssertNil(store.recordings.first?.folder)
+        XCTAssertTrue(store.recordings(inFolder: "Work").isEmpty)
+        // The empty folder itself sticks around for the sidebar.
+        XCTAssertEqual(store.folders, ["Work"])
+    }
+
+    func test_rename_folder_retags_recordings() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "A", source: .microphone, audioFileName: "a.wav")
+        store.add(rec)
+        store.assign(rec, toFolder: "Work")
+
+        XCTAssertEqual(store.renameFolder("Work", to: "Office"), "Office")
+        XCTAssertEqual(store.folders, ["Office"])
+        XCTAssertEqual(store.recordings.first?.folder, "Office")
+    }
+
+    func test_rename_folder_rejects_collision() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        store.createFolder("Work")
+        store.createFolder("Personal")
+
+        XCTAssertNil(store.renameFolder("Work", to: "Personal"))
+        XCTAssertEqual(store.folders, ["Personal", "Work"])
+    }
+
+    /// Regression: a case-only rename ("work" -> "Work") used to false-positive
+    /// the case-insensitive collision check against the folder being renamed.
+    func test_rename_folder_allows_case_only_change() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        store.createFolder("work")
+        let rec = Recording(title: "A", source: .microphone, audioFileName: "a.wav")
+        store.add(rec)
+        store.assign(rec, toFolder: "work")
+
+        XCTAssertEqual(store.renameFolder("work", to: "Work"), "Work")
+        XCTAssertEqual(store.folders, ["Work"])
+        XCTAssertEqual(store.recordings.first?.folder, "Work")
+    }
+
+    func test_delete_folder_unfiles_recordings_and_persists() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "A", source: .microphone, audioFileName: "a.wav")
+        store.add(rec)
+        store.assign(rec, toFolder: "Work")
+
+        store.deleteFolder("Work")
+        XCTAssertTrue(store.folders.isEmpty)
+        XCTAssertNil(store.recordings.first?.folder)
+
+        let reloaded = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertTrue(reloaded.folders.isEmpty)
+        XCTAssertNil(reloaded.recordings.first?.folder)
+    }
+
+    func test_unfiled_recordings_returns_only_unfiled_non_trashed() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let unfiled = Recording(title: "A", source: .microphone, audioFileName: "a.wav")
+        let filed = Recording(title: "B", source: .microphone, audioFileName: "b.wav")
+        let trashed = Recording(title: "C", source: .microphone, audioFileName: "c.wav")
+        store.add(unfiled); store.add(filed); store.add(trashed)
+        store.assign(filed, toFolder: "Work")
+        store.softDelete(trashed)
+
+        let result = store.unfiledRecordings()
+        XCTAssertEqual(result.map(\.id), [unfiled.id])
+    }
+
+    // MARK: - Summary sidecar
+
+    func test_summary_sidecar_written_when_recording_has_summary() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        var rec = Recording(title: "S", source: .microphone, audioFileName: "s.wav")
+        rec.summary = "Decisions: ship it."
+        store.add(rec)
+
+        let url = store.summaryURL(for: rec)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path),
+                      "Expected sidecar at \(url.path)")
+        let onDisk = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(onDisk, "Decisions: ship it.")
+    }
+
+    func test_summary_sidecar_absent_when_summary_is_nil() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "S", source: .microphone, audioFileName: "s.wav")
+        store.add(rec)
+        let url = store.summaryURL(for: rec)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                       "Nil summary should not leave a stub file")
+    }
+
+    func test_summary_sidecar_deleted_when_summary_cleared_to_empty() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        var rec = Recording(title: "S", source: .microphone, audioFileName: "s.wav")
+        rec.summary = "Original summary"
+        store.add(rec)
+        let url = store.summaryURL(for: rec)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+
+        rec.summary = ""
+        store.update(rec)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                       "Clearing summary to empty must remove the sidecar")
+
+        rec.summary = nil
+        store.update(rec)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                       "Setting summary to nil must remove the sidecar")
+    }
+
+    func test_summary_sidecar_updated_on_update() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        var rec = Recording(title: "S", source: .microphone, audioFileName: "s.wav")
+        rec.summary = "v1"
+        store.add(rec)
+
+        rec.summary = "v2 with more detail"
+        store.update(rec)
+        let onDisk = try String(contentsOf: store.summaryURL(for: rec), encoding: .utf8)
+        XCTAssertEqual(onDisk, "v2 with more detail")
+    }
+
+    func test_permanently_delete_removes_summary_sidecar() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        var rec = Recording(title: "S", source: .microphone, audioFileName: "s.wav")
+        rec.summary = "Going away"
+        store.add(rec)
+        let url = store.summaryURL(for: rec)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+
+        store.permanentlyDelete(rec)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                       "permanentlyDelete must remove the summary sidecar too")
+    }
+
+    func test_permanently_delete_removes_subtitle_sidecar() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "S", source: .microphone, audioFileName: "s.wav")
+        store.add(rec)
+        // The .srt sidecar is written post-transcription by TranscriptExporter,
+        // not by add() — simulate it landing next to the audio.
+        let srt = store.subtitleURL(for: rec)
+        try "1\n00:00:00,000 --> 00:00:01,000\nhi\n".write(to: srt, atomically: true, encoding: .utf8)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: srt.path))
+
+        store.permanentlyDelete(rec)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: srt.path),
+                       "permanentlyDelete must remove the .srt subtitle sidecar too")
+    }
+
+    func test_subtitle_filename_derived_from_audio_filename() {
+        let rec = Recording(title: "X",
+                            source: .microphone,
+                            audioFileName: "Voice Memo 2024-01-01.m4a")
+        XCTAssertEqual(rec.subtitleFileName, "Voice Memo 2024-01-01.srt")
+    }
+
+    func test_summary_filename_derived_from_audio_filename() {
+        let rec = Recording(title: "X",
+                            source: .microphone,
+                            audioFileName: "Voice Memo 2024-01-01.wav")
+        XCTAssertEqual(rec.summaryFileName, "Voice Memo 2024-01-01.summary.txt")
+    }
+
+    func test_summary_sidecar_trims_whitespace() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        var rec = Recording(title: "S", source: .microphone, audioFileName: "s.wav")
+        // Whitespace-only summaries are effectively empty — the sidecar
+        // should NOT be written for those.
+        rec.summary = "   \n\n  "
+        store.add(rec)
+        let url = store.summaryURL(for: rec)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                       "Whitespace-only summary must be treated as empty")
+    }
+
+    // MARK: - Empty Trash (bulk permanent delete)
+
+    /// `emptyTrash()` removes every trashed recording (metadata + on-disk
+    /// audio) in one pass while leaving live recordings untouched, and
+    /// returns the count it removed.
+    func test_empty_trash_removes_only_trashed_recordings_and_their_files() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+
+        // Two trashed recordings with real audio on disk.
+        let trashedURLs: [URL] = try (0..<2).map { i in
+            let url = store.freshAudioURL(suggestedName: "Trashed\(i)")
+            try Data(repeating: 0, count: 512).write(to: url)
+            let rec = Recording(title: "Trashed\(i)", source: .microphone,
+                                audioFileName: url.lastPathComponent)
+            store.add(rec)
+            store.softDelete(rec)
+            return url
+        }
+
+        // One live recording that must survive.
+        let liveURL = store.freshAudioURL(suggestedName: "Live")
+        try Data(repeating: 0, count: 512).write(to: liveURL)
+        let live = Recording(title: "Live", source: .microphone,
+                             audioFileName: liveURL.lastPathComponent)
+        store.add(live)
+
+        let removed = store.emptyTrash()
+
+        XCTAssertEqual(removed, 2)
+        XCTAssertTrue(store.recordings(in: .recentlyDeleted).isEmpty)
+        XCTAssertEqual(store.recordings.map(\.id), [live.id])
+        for url in trashedURLs {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                           "Trashed audio should be gone")
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: liveURL.path),
+                      "Live recording's audio must be untouched")
+
+        // Removal persists across relaunch.
+        let reloaded = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertEqual(reloaded.recordings.map(\.id), [live.id])
+    }
+
+    /// Emptying an already-empty trash is a no-op that reports zero.
+    func test_empty_trash_is_noop_when_trash_empty() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let live = Recording(title: "Live", source: .microphone, audioFileName: "l.wav")
+        store.add(live)
+
+        XCTAssertEqual(store.emptyTrash(), 0)
+        XCTAssertEqual(store.recordings.map(\.id), [live.id])
+    }
+
+    /// Bulk empty must tombstone trashed Voice-Memo imports (same contract as
+    /// the per-row permanent delete) so the next sync doesn't resurrect them.
+    func test_empty_trash_tombstones_trashed_voice_memo_imports() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let memo = voiceMemoImport("a", fromFolderID: "FOLDER-1")
+        store.add(memo)
+        store.softDelete(memo)
+
+        store.emptyTrash()
+
+        XCTAssertTrue(store.voiceMemoTombstones.contains("unique-a"),
+                      "Emptying the trash must tombstone deleted voice-memo imports")
+        let reloaded = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertTrue(reloaded.voiceMemoTombstones.contains("unique-a"),
+                      "Tombstones from Empty Trash must persist across relaunch")
+    }
+
+    // MARK: - Stopping a queued/running transcription
+
+    /// Stopping a `.running` recording from the Queue moves it to Recently
+    /// Deleted (soft-delete) and marks it terminal, so it drops out of the
+    /// Queue and the main list instead of lingering as a "Failed" row — while
+    /// the audio stays recoverable via Restore.
+    func test_stop_transcription_trashes_running_recording() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        var rec = Recording(title: "In progress", source: .microphone, audioFileName: "r.wav")
+        rec.status = .running
+        store.add(rec)
+
+        store.stopTranscription(rec)
+
+        let stored = store.recordings.first { $0.id == rec.id }
+        XCTAssertEqual(stored?.status, .failed)
+        XCTAssertTrue(stored?.isTrashed == true, "Stopped recording should move to Recently Deleted")
+    }
+
+    /// Same for a `.pending` item still waiting its turn.
+    func test_stop_transcription_trashes_pending_recording() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "Waiting", source: .microphone,
+                            audioFileName: "p.wav", status: .pending)
+        store.add(rec)
+
+        store.stopTranscription(rec)
+
+        let stored = store.recordings.first { $0.id == rec.id }
+        XCTAssertEqual(stored?.status, .failed)
+        XCTAssertTrue(stored?.isTrashed == true)
+    }
+
+    /// Stopping an already-completed recording is a no-op — we must not trash a
+    /// finished recording or clobber its status if the row is stale (e.g. the
+    /// run finished between the user clicking Stop and the mutation landing).
+    func test_stop_transcription_is_noop_for_completed_recording() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let rec = Recording(title: "Done", source: .microphone,
+                            audioFileName: "d.wav", status: .completed,
+                            fullText: "hello")
+        store.add(rec)
+
+        store.stopTranscription(rec)
+
+        let stored = store.recordings.first { $0.id == rec.id }
+        XCTAssertEqual(stored?.status, .completed)
+        XCTAssertFalse(stored?.isTrashed == true, "A completed recording must not be trashed by a stale Stop")
+    }
+
+    /// Removing from the Queue reuses `permanentlyDelete`, so both the metadata
+    /// and the on-disk audio go away.
+    func test_permanently_delete_removes_queued_recording_and_audio() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let audioURL = store.freshAudioURL(suggestedName: "Queued")
+        try Data(repeating: 0, count: 1024).write(to: audioURL)
+        let rec = Recording(title: "Queued", source: .microphone,
+                            audioFileName: audioURL.lastPathComponent, status: .running)
+        store.add(rec)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
+
+        store.permanentlyDelete(rec)
+
+        XCTAssertNil(store.recordings.first { $0.id == rec.id })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: audioURL.path))
+    }
+
+    func test_load_seeds_folders_from_recordings_when_folders_file_missing() throws {
+        // Simulates a recordings.json that already references a folder name
+        // (e.g. after restoring from backup, or hand-editing the JSON).
+        let store = RecordingStore(rootDirectory: tempRoot)
+        var rec = Recording(title: "A", source: .microphone, audioFileName: "a.wav")
+        rec.folder = "Imported"
+        store.add(rec)
+
+        // Wipe folders.json to mimic a partial import.
+        let foldersURL = tempRoot.appendingPathComponent("folders.json")
+        try? FileManager.default.removeItem(at: foldersURL)
+
+        let reloaded = RecordingStore(rootDirectory: tempRoot)
+        XCTAssertEqual(reloaded.folders, ["Imported"])
+    }
+
+    // MARK: - Voice Memos un-select cleanup (issue #57, part 1)
+
+    /// Build a Voice-Memo import stub with a recorded source folder.
+    private func voiceMemoImport(_ id: String,
+                                 fromFolderID folderID: String?) -> Recording {
+        Recording(title: "Memo \(id)",
+                  source: .voiceMemo,
+                  audioFileName: "\(id).wav",
+                  voiceMemoUniqueID: "unique-\(id)",
+                  voiceMemoFolderUUID: folderID)
+    }
+
+    func test_voiceMemoRecordings_fromFolderID_selectsOnlyMatchingOrigin() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        store.add(voiceMemoImport("a", fromFolderID: "FOLDER-1"))
+        store.add(voiceMemoImport("b", fromFolderID: "FOLDER-1"))
+        store.add(voiceMemoImport("c", fromFolderID: "FOLDER-2"))
+        store.add(voiceMemoImport("d", fromFolderID: Recording.voiceMemoUnfiledFolderID))
+        // Legacy import (origin never recorded) + a plain mic recording must
+        // never be selected.
+        store.add(voiceMemoImport("legacy", fromFolderID: nil))
+        store.add(Recording(title: "Mic", source: .microphone, audioFileName: "mic.wav"))
+
+        XCTAssertEqual(Set(store.voiceMemoRecordings(fromFolderID: "FOLDER-1").map(\.voiceMemoUniqueID)),
+                       ["unique-a", "unique-b"])
+        XCTAssertEqual(store.voiceMemoRecordings(fromFolderID: "FOLDER-2").map(\.voiceMemoUniqueID),
+                       ["unique-c"])
+        XCTAssertEqual(store.voiceMemoRecordings(fromFolderID: Recording.voiceMemoUnfiledFolderID).map(\.voiceMemoUniqueID),
+                       ["unique-d"])
+    }
+
+    func test_softDeleteVoiceMemos_movesMatchingToTrash_leavesOthers() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        store.add(voiceMemoImport("a", fromFolderID: "FOLDER-1"))
+        store.add(voiceMemoImport("b", fromFolderID: "FOLDER-1"))
+        store.add(voiceMemoImport("c", fromFolderID: "FOLDER-2"))
+        store.add(voiceMemoImport("legacy", fromFolderID: nil))
+
+        let removed = store.softDeleteVoiceMemos(fromFolderID: "FOLDER-1")
+        XCTAssertEqual(removed, 2)
+
+        // The two FOLDER-1 imports are trashed but still present (restorable).
+        let trashedIDs = Set(store.recordings.filter { $0.isTrashed }.map(\.voiceMemoUniqueID))
+        XCTAssertEqual(trashedIDs, ["unique-a", "unique-b"])
+        // FOLDER-2 and the legacy nil-origin import are untouched.
+        XCTAssertEqual(Set(store.recordings.filter { !$0.isTrashed }.map(\.voiceMemoUniqueID)),
+                       ["unique-c", "unique-legacy"])
+    }
+
+    /// Soft-delete (not permanent) so no tombstone is written — the recordings
+    /// stay in the store, so re-selecting the folder can't create duplicates,
+    /// and the source memos in Voice Memos are never touched.
+    func test_softDeleteVoiceMemos_doesNotTombstone() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        store.add(voiceMemoImport("a", fromFolderID: "FOLDER-1"))
+
+        store.softDeleteVoiceMemos(fromFolderID: "FOLDER-1")
+        XCTAssertTrue(store.voiceMemoTombstones.isEmpty,
+                      "Un-select cleanup must not tombstone — it's a recoverable soft-delete")
+        XCTAssertEqual(store.recordings.count, 1, "The recording stays in the store")
+        XCTAssertTrue(store.recordings.first?.isTrashed ?? false)
+    }
+
+    func test_softDeleteVoiceMemos_noMatches_returnsZero() {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        store.add(voiceMemoImport("a", fromFolderID: "FOLDER-1"))
+        XCTAssertEqual(store.softDeleteVoiceMemos(fromFolderID: "FOLDER-UNKNOWN"), 0)
+        XCTAssertFalse(store.recordings.first?.isTrashed ?? true)
+    }
+
+    // MARK: - Store-location pointer (mila-mcp discovery contract)
+
+    func test_init_writes_store_location_pointer_at_root() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let pointer = try XCTUnwrap(StoreLocationPointer.read(from: tempRoot))
+        XCTAssertEqual(pointer.recordingsDirectory, store.recordingsDirectory.path)
+        XCTAssertEqual(pointer.storeFile, store.storeURL.path)
+    }
+
+    func test_relocate_updates_pointer_and_reset_restores_it() throws {
+        let store = RecordingStore(rootDirectory: tempRoot)
+        let custom = tempRoot.appendingPathComponent("Elsewhere", isDirectory: true)
+
+        store.relocateRecordings(to: custom)
+        var pointer = try XCTUnwrap(StoreLocationPointer.read(from: tempRoot))
+        XCTAssertEqual(pointer.recordingsDirectory, custom.path)
+        XCTAssertEqual(pointer.storeFile,
+                       custom.appendingPathComponent("recordings.json").path)
+
+        store.relocateRecordings(to: nil)
+        pointer = try XCTUnwrap(StoreLocationPointer.read(from: tempRoot))
+        XCTAssertEqual(pointer.recordingsDirectory,
+                       store.defaultRecordingsDirectory.path)
+    }
+}

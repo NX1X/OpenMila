@@ -1,0 +1,193 @@
+name: Live AI E2E
+
+# Offline, deterministic check of Mila's Live AI loop — NO API key, no network,
+# no model. Verifies the CALL CONTRACT the app must honour:
+#  - session continuity (open once with --session-id, then --resume each tick)
+#  - a transcript delta is shipped every tick
+#  - the JSON envelope parses and items/summary are tracked across ticks
+#    without dropping state
+#
+# Pure Python, runs on Ubuntu (free on public repos). The real-LLM semantic
+# run is available on demand via `scripts/llm-live-ai-e2e.py --backend cli`
+# (local OAuth) or `--backend api` (needs ANTHROPIC_API_KEY) — not in default CI.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "Total simulated meeting length in minutes"
+        required: false
+        default: "3"
+
+jobs:
+  live-ai-en:
+    name: English meeting (mock)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: changes
+        with:
+          filters: |
+            relevant:
+              - 'scripts/llm-live-ai-e2e.py'
+              - 'scripts/fixtures/**'
+              - 'Mila/Models/LiveAISettings.swift'
+              - 'Mila/Actions/LiveAISession.swift'
+              - '.github/workflows/llm-live-ai-e2e.yml'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.changes.outputs.relevant == 'true'
+        with:
+          python-version: "3.12"
+      - name: Run E2E (English, mock backend — no key)
+        if: steps.changes.outputs.relevant == 'true'
+        run: |
+          python scripts/llm-live-ai-e2e.py \
+            --backend mock \
+            --fixture scripts/fixtures/3min-meeting-en.txt \
+            --minutes ${{ github.event.inputs.minutes || '3' }}
+
+  live-ai-he:
+    name: Hebrew meeting (mock)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: changes
+        with:
+          filters: |
+            relevant:
+              - 'scripts/llm-live-ai-e2e.py'
+              - 'scripts/fixtures/**'
+              - 'Mila/Models/LiveAISettings.swift'
+              - 'Mila/Actions/LiveAISession.swift'
+              - '.github/workflows/llm-live-ai-e2e.yml'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.changes.outputs.relevant == 'true'
+        with:
+          python-version: "3.12"
+      - name: Run E2E (Hebrew, mock backend — no key)
+        if: steps.changes.outputs.relevant == 'true'
+        run: |
+          python scripts/llm-live-ai-e2e.py \
+            --backend mock \
+            --fixture scripts/fixtures/3min-meeting-he.txt \
+            --minutes ${{ github.event.inputs.minutes || '3' }}
+
+  # Builds Mila and runs the layout UI tests (DetailLayoutUITests) — those are
+  # deterministic frame-coordinate assertions that run ALWAYS, free, no key.
+  # The final Claude-vision step is the one piece that genuinely needs a model
+  # (a layout *judge*, which can't be mocked into a meaningful assertion): it
+  # runs as a bonus when ANTHROPIC_API_KEY is present and skips otherwise, so
+  # the job never depends on a key.
+  ui-layout:
+    name: UI layout tests (+ optional vision)
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: changes
+        with:
+          filters: |
+            relevant:
+              - 'scripts/llm-live-ai-e2e.py'
+              - 'scripts/llm-verify-screenshots.py'
+              - 'scripts/fixtures/**'
+              - 'Mila/Models/LiveAISettings.swift'
+              - 'Mila/Actions/LiveAISession.swift'
+              # DetailLayoutUITests screenshots the main window AND the
+              # Settings window, so a change to any view this job renders —
+              # or to any accessibility identifier or launch seam it queries
+              # — has to be able to trigger it.
+              #
+              # A glob rather than a hand-kept list of files, deliberately.
+              # #194 shipped an empty Settings window past a green CI
+              # precisely because nothing here looked at Settings, and an
+              # incomplete filter reproduces that failure exactly: the job
+              # never runs, so the coverage exists on paper only. Enumerating
+              # files re-opens that hole every time a view moves, gets split,
+              # or a new destination lands in a new file — three ways for
+              # this list to rot silently. Naming the whole directory cannot
+              # rot. The identifiers these tests match on are spread across
+              # SidebarView (sidebar.settings.link, sidebar.folder.default,
+              # sidebar.recording.*), RecordingDetailView
+              # (detail.title.label), SettingsView (settings.section.* plus
+              # most destination probes), StorageSettingsTab and
+              # VoiceMemosSettingsTab (their probes) — all under Mila/Views.
+              - 'Mila/Views/**'
+              # The --ui-test-clean-store / --ui-test-seed-recording launch
+              # seams and the Settings scene's windowResizability live here,
+              # and the tests' launch-state contract depends on both.
+              - 'Mila/App/MilaApp.swift'
+              - 'MilaUITests/DetailLayoutUITests.swift'
+              - '.github/workflows/llm-live-ai-e2e.yml'
+      - name: Install xcodegen
+        if: steps.changes.outputs.relevant == 'true'
+        run: brew install xcodegen
+      # The .xcodeproj references Mila/Resources/PythonRuntime as a
+      # bundled resource — the link step fails without it. Same cache
+      # key as ios-tests.yml so cold builds across the two workflows
+      # restore from a single entry.
+      - name: Cache diarization bundle
+        if: steps.changes.outputs.relevant == 'true'
+        id: diar-bundle-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: Mila/Resources/PythonRuntime
+          key: diar-bundle-${{ runner.os }}-${{ hashFiles('scripts/build-diarization-bundle.sh') }}
+      - name: Build diarization bundle (cold path only)
+        if: steps.changes.outputs.relevant == 'true' && (steps.diar-bundle-cache.outputs.cache-hit != 'true')
+        run: make bundle-diarization
+      - name: Generate Xcode project
+        if: steps.changes.outputs.relevant == 'true'
+        run: make project
+      - name: Run UI tests (writes screenshots to /tmp/mila-ui-screenshots/)
+        if: steps.changes.outputs.relevant == 'true'
+        env:
+          MILA_UI_SCREENSHOTS_DIR: /tmp/mila-ui-screenshots
+        run: |
+          mkdir -p "$MILA_UI_SCREENSHOTS_DIR"
+          # Only the screenshot-bearing layout tests — the full UI
+          # suite is heavier and lives in the main CI workflow.
+          xcodebuild test \
+            -project Mila.xcodeproj \
+            -scheme Mila \
+            -destination 'platform=macOS' \
+            -only-testing:MilaUITests/DetailLayoutUITests \
+            -derivedDataPath build-uitests \
+            CODE_SIGNING_ALLOWED=NO || (echo "UI tests failed — vision check skipped" && exit 1)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.changes.outputs.relevant == 'true' && (always())
+        with:
+          name: ui-screenshots
+          path: /tmp/mila-ui-screenshots/
+          if-no-files-found: warn
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.changes.outputs.relevant == 'true'
+        with:
+          python-version: "3.12"
+      - run: pip install --upgrade anthropic
+        if: steps.changes.outputs.relevant == 'true'
+      - name: Visual regression check via Claude vision
+        if: steps.changes.outputs.relevant == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::warning::ANTHROPIC_API_KEY not set — skipping the vision check."
+            exit 0
+          fi
+          python scripts/llm-verify-screenshots.py

@@ -1,0 +1,336 @@
+name: Mila
+options:
+  bundleIdPrefix: io.island.whisper
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: YES
+    SWIFT_STRICT_CONCURRENCY: minimal
+    GENERATE_INFOPLIST_FILE: NO
+    PRODUCT_BUNDLE_IDENTIFIER: io.island.whisper.IslandWhisper
+    MARKETING_VERSION: "1.9.5-beta.2"
+    # 1.9.2-beta.2:
+    #   * Recording no longer dies silently when the input device
+    #     changes mid-session. A yanked USB mic / unplugged headset made
+    #     CoreAudio re-point the engine's input at a different sample
+    #     rate; AVAudioEngine stops itself and posts
+    #     AVAudioEngineConfigurationChange, nobody was listening, and
+    #     the tap never fired again — one user's 26-minute meeting was
+    #     saved as 24s of audio. Now rebuilt from the notification plus
+    #     a frame-count watchdog, into the same WAV (#143, closes #142).
+    #   * System-audio (SCK) capture restarts after an SCK-side death,
+    #     with backoff, and logs via Logger instead of print so the
+    #     failure actually reaches diagnostic bundles.
+    #   * Recording duration comes from the audio file, not the
+    #     wall-clock timer, and capture that ends early now warns the
+    #     user instead of looking like a bad transcription.
+    # 1.9.2-beta.1:
+    #   * Beta of the 1.9.2 line. Remote transcription now routes per
+    #     recording language — a Hebrew-only server model (ivrit.ai) no
+    #     longer returns Hebrew words for English speech; set the new
+    #     Settings → Models → "English model" id (#122). The Auto-detect
+    #     recording language is REMOVED in the same change: the speech
+    #     model is chosen from the language, so detection meant picking a
+    #     specialist before knowing the language (#123). Plus: Live AI can
+    #     talk to any OpenAI-compatible endpoint instead of requiring a
+    #     local claude/cursor-agent CLI (#95), and stopping a recording now
+    #     cancels the Live AI session instead of letting one more tick fire
+    #     and leaking its session sandbox (#113).
+    #     See RELEASE_NOTES/v1.9.2-beta.1.md.
+    # 1.9.1:
+    #   * Live AI gained a per-recording Context box, so one meeting's
+    #     agenda no longer leaks into the next meeting's summary via the
+    #     global system prompt. See RELEASE_NOTES/v1.9.1.md.
+    # 1.9.0:
+    #   * First stable of the 1.9.0 line. Everything from 1.9.0-beta.1
+    #     (remote transcription backend, iPhone Voice Memos sync, neural VAD,
+    #     LLM auto-summary, opt-in beta channel, large bug sweep) PLUS: speaker
+    #     renaming with a searchable name directory (#88), adaptive gain for
+    #     quiet built-in mics (#101), diarization repair-loop + stalled-clock
+    #     system-audio fixes (#91), TCC-surviving DMG signing (#84), the Record
+    #     button no longer blocking on the final summary (#87), .milaconfig
+    #     double-click setup (#102), and a real Test-connection transcription
+    #     check (#104). See RELEASE_NOTES/v1.9.0.md.
+    # 1.9.0-beta.1:
+    #   * First beta on the new opt-in beta channel. Everything merged since
+    #     1.8.14: remote transcription backend, iPhone Voice Memos sync
+    #     (scoped folder access, no Full Disk Access), neural VAD, LLM
+    #     auto-summary + test panel, queue Stop/Remove, auto-drop accidental
+    #     clips, dictation-overlay fix, and a large bug-fix sweep. See
+    #     RELEASE_NOTES/v1.9.0-beta.1.md.
+    # 1.8.14:
+    #   * Live AI: guarantee a fresh Claude session per recording so a new
+    #     recording's summary / action items can never inherit a previous
+    #     recording's content (cross-recording bleed). The per-recording
+    #     reset is now deterministic at record-start; cancel() clears the
+    #     rolling summary/action items; session new/resume decisions are
+    #     logged to OSLog so diagnostic reports can prove isolation. (#30)
+    # 1.8.13:
+    #   * Live AI: throttle the LLM feed to a configurable minimum
+    #     interval (default 20s) + stop the recording view re-rendering
+    #     the transcript at audio cadence (LazyVStack + isolated elapsed
+    #     clock). Large CPU reduction on long recordings.
+    #   * Diarization now defaults OFF (a one-time migration also turns
+    #     it off for existing users) to cut the continuous pyannote
+    #     subprocess CPU draw; re-enable in Settings ▸ Diarization.
+    #   * Fixed Hebrew RTL alignment of the summary / action items /
+    #     transcript in both the live and saved views; the saved summary
+    #     now renders as a few readable lines, not one run-on block.
+    #   * New: prompt to stop recording when a Zoom meeting ends.
+    #   * New: pre-update "What's New" popup.
+    # 1.7.0 ships eight features in one batch:
+    #   * Adaptive mic gain control (AGC): boosts low-volume input to
+    #     a -26 dBFS target with smooth attack/release + soft clip.
+    #     Live transcript stays useful even when system mic input is
+    #     low. Toggle in Settings → Audio Input.
+    #   * Summary backfill + regenerate: completed recordings missing
+    #     a summary get one filled on launch + when LLM CLI is
+    #     enabled. Right-click → Regenerate summary in the detail
+    #     view + rename sheet.
+    #   * Post-record popup: always appears with summary + action
+    #     items. Send-to-Claude carries transcript + summary.
+    #   * Save summary to disk: `.summary.txt` sidecar next to the
+    #     transcript. LLM summary generated for every recording when
+    #     the CLI is configured, not just Live AI mode.
+    #   * Copyable summary: right-click → Copy in the detail view +
+    #     rename sheet.
+    #   * Configurable recordings directory: Settings → Storage with
+    #     a folder picker (security-scoped bookmark) and "Reset to
+    #     default" action.
+    #   * App-record silence auto-drop: system-audio leg drops after
+    #     a silent window (5 min prod, 10s in UI tests).
+    #   * MacBook Air hardware gate: skips the live AI pipeline on
+    #     Air-class chips (whisper + pyannote together can't keep up
+    #     real-time), recording + post-record transcribe still runs.
+    # 1.6.4 ships live speaker labels + instant save:
+    #   * Wired the LiveSpeakerDiarizer feed — pyannote daemon was
+    #     spawning but no one was calling diarizer.process; speaker
+    #     labels never appeared in the live pane.
+    #   * Fixed the daemon's embedder call — pyannote 3.x's
+    #     `pipeline._embedding` takes a torch.Tensor directly, not a
+    #     `{"waveform":, "sample_rate":}` dict, so every embed call
+    #     was crashing silently with 'dict has no attribute to'.
+    #   * applySpeakerLabels matches segments to intervals by max
+    #     overlap; runs on every recording (not LLM-gated) and stays
+    #     under 50ms even at 2-min scale.
+    #   * Live pane renders `SPEAKER_00:` prefix inline as labels
+    #     arrive.
+    #   * When VAD ran successfully, post-record skips re-transcribe
+    #     + re-diarize entirely — rename sheet pops up with the
+    #     transcript already populated. Drains diarizer + reapplies
+    #     labels at stop time so the final utterance gets its
+    #     speaker label before saving (4 race fixes from Bugbot
+    #     review). Still writes the .srt sidecar.
+    CURRENT_PROJECT_VERSION: "65"
+
+packages:
+  TranscriptionCore:
+    path: Packages/TranscriptionCore
+  MilaKit:
+    path: Packages/MilaKit
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    revision: 066e75a8b3e99962685d6a90cdd5293ebffd9261
+  # MCP Swift SDK for the mila-mcp helper (stdio server exposing
+  # transcriptions to Claude). Pinned exactly, like Sparkle.
+  MCP:
+    url: https://github.com/modelcontextprotocol/swift-sdk
+    exactVersion: 0.12.1
+    
+targets:
+  Mila:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Mila
+        excludes:
+          - "Resources/Info.plist"
+          - "Resources/Mila.entitlements"
+          - "Resources/DiarizationModels"
+          - "Resources/PythonRuntime"
+      - path: Mila/Resources/DiarizationModels
+        type: folder
+        buildPhase: resources
+      # PythonRuntime is produced by `make bundle-diarization`. Treated as
+      # a folder reference (not a recursive source scan) so XcodeGen copies
+      # the entire directory tree into Contents/Resources/PythonRuntime/.
+      # The directory is .gitignored; CI is expected to fetch/build it
+      # before invoking xcodebuild. If it's missing, the build proceeds
+      # without bundled diarization — SpeakerDiarizer.resolvePython falls
+      # back to the user-configured python automatically.
+      - path: Mila/Resources/PythonRuntime
+        type: folder
+        buildPhase: resources
+        optional: true
+    resources:
+      - path: Mila/Assets.xcassets
+    info:
+      path: Mila/Resources/Info.plist
+      properties:
+        CFBundleName: Mila
+        CFBundleDisplayName: Mila
+        # Inherit from settings.MARKETING_VERSION / CURRENT_PROJECT_VERSION above
+        # so a release bump only has to change those two fields. Hardcoding here
+        # caused v1.2.4 to ship with build 6 instead of 7 — Sparkle's appcast
+        # advertised 7 (correct), but the bundle's CFBundleVersion stayed at
+        # the stale literal until the next release picked up the inheritance.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: "14.0"
+        LSApplicationCategoryType: public.app-category.productivity
+        NSHumanReadableCopyright: "Written by Uri Harduf from Island"
+        NSMicrophoneUsageDescription: "Mila needs microphone access to record audio for transcription and dictation."
+        NSScreenCaptureUsageDescription: "Mila needs screen recording permission to capture audio from apps like Zoom."
+        NSAppleEventsUsageDescription: "Mila uses AppleEvents to paste dictated text into the active app."
+        NSSpeechRecognitionUsageDescription: "Mila transcribes locally on your Mac; no audio is sent to the cloud."
+        NSPrincipalClass: NSApplication
+        LSUIElement: false
+        # Custom UTI used by the in-app drag-and-drop payload that moves a
+        # recording from a list row onto a sidebar folder. Declaring it as
+        # an *exported* type is what lets SwiftUI's .dropDestination match
+        # the payload — without this entry, `UTType(exportedAs: …)` in code
+        # registers nothing at runtime and drops silently no-op (the folder
+        # never highlights as a drop target).
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: io.island.whisper.recording
+            UTTypeDescription: Mila Recording
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification: {}
+          # `.milaconfig` — a shareable JSON settings file. Declaring the type
+          # (extension -> UTI) plus the CFBundleDocumentTypes entry below is what
+          # lets a double-clicked `.milaconfig` launch/foreground Mila and route
+          # through MilaAppDelegate.application(_:open:) -> MilaConfigImporter.
+          - UTTypeIdentifier: io.island.mila.config
+            UTTypeDescription: Mila Configuration
+            UTTypeConformsTo:
+              - public.json
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - milaconfig
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Mila Configuration
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - io.island.mila.config
+        # Sparkle auto-update feed. The appcast is a static file published to
+        # GitHub Pages; release binaries are attached to GitHub Releases. Forks
+        # that want their own update channel should point this at their own
+        # appcast and sign releases with their own EdDSA key (see SUPublicEDKey).
+        SUFeedURL: https://island-io.github.io/mila/appcast.xml
+        SUPublicEDKey: iF35blPidKUXIaLr59fJgGGdXtI8AgVNxOx5w+eTieY=
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+    entitlements:
+      path: Mila/Resources/Mila.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.device.audio-input: true
+        com.apple.security.device.microphone: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.network.client: true
+        com.apple.security.cs.allow-jit: true
+        com.apple.security.cs.disable-library-validation: true
+    dependencies:
+      - package: TranscriptionCore
+        product: TranscriptionCore
+      - package: MilaKit
+        product: MilaKit
+      - package: Sparkle
+        product: Sparkle
+      # Build-order only: the post-build script below copies the helper
+      # into Contents/MacOS. Not linked (it's an executable, not a lib).
+      - target: mila-mcp
+        link: false
+        embed: false
+    settings:
+      base:
+        OTHER_LDFLAGS: "$(inherited) -framework Accelerate -framework Metal -framework MetalKit"
+    postBuildScripts:
+      # Ship the MCP helper inside the app bundle so users can register it
+      # with `claude mcp add mila -- /Applications/Mila.app/Contents/MacOS/mila-mcp`.
+      # Runs before the app's code-sign step, so the copy is covered by the
+      # bundle seal; the helper binary carries its own signature from its
+      # target build (and make-dmg.sh's --deep re-sign covers DMGs).
+      - name: Embed mila-mcp helper
+        script: |
+          cp -f "$BUILT_PRODUCTS_DIR/mila-mcp" "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/mila-mcp"
+        inputFiles:
+          - $(BUILT_PRODUCTS_DIR)/mila-mcp
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/mila-mcp
+
+  mila-mcp:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: MilaMCP
+    dependencies:
+      - package: MilaKit
+        product: MilaKit
+      - package: MCP
+        product: MCP
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.island.whisper.IslandWhisper.mcp
+        # A command-line tool, not a bundle — nothing reads an Info.plist
+        # here, and generating one just adds an empty section.
+        GENERATE_INFOPLIST_FILE: NO
+        # Note on size: the MCP SDK pulls swift-nio into this target — a
+        # Debug mila-mcp is ~18 MB and carries ~33k NIO symbols, verified
+        # with `nm`. (An earlier note here also blamed ServiceLifecycle;
+        # that one genuinely isn't linked — zero symbols.) Release builds
+        # dead-strip, so check the shipped size before drawing conclusions
+        # from the Debug number.
+
+  MilaTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: MilaTests
+    dependencies:
+      - target: Mila
+      - package: TranscriptionCore
+        product: TranscriptionCore
+      - package: MilaKit
+        product: MilaKit
+    settings:
+      base:
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Mila.app/Contents/MacOS/Mila"
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: io.island.whisper.IslandWhisperTests
+
+  MilaUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: MilaUITests
+    dependencies:
+      - target: Mila
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: io.island.whisper.IslandWhisperUITests
+        TEST_TARGET_NAME: Mila
+        # Match the host app's ad-hoc signing so the runner app and the
+        # injected xctest bundle have the same (empty) Team ID — otherwise
+        # macOS rejects the dlopen at test-time with "different Team IDs".
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: NO

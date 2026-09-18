@@ -1,0 +1,622 @@
+import Foundation
+import Combine
+import CryptoKit
+import os.log
+
+private let modelLogger = Logger(subsystem: "io.island.mila.Mila",
+                                 category: "models")
+
+/// Catalog of supported ggml models. Add more here as needed.
+struct WhisperModel: Identifiable, Hashable, Codable {
+    var id: String { name }
+    var name: String
+    var displayName: String
+    var url: URL
+    var sizeBytes: Int64
+    /// Lowercase hex SHA-256 of the file at `url`. Pinned so that a
+    /// compromised HuggingFace repo (or any swap of the .bin between the URL
+    /// being fetched and our parser opening it) is rejected before the bytes
+    /// ever reach whisper.cpp's GGML loader.
+    var sha256: String
+    var languageHint: String
+
+    /// URL of an `<name>-encoder.mlmodelc.zip` (CoreML encoder build of the
+    /// same model). When present, ModelManager downloads + extracts it
+    /// alongside the `.bin` so whisper.cpp's auto-detect routes the
+    /// encoder to CoreML / Apple Neural Engine. Optional: a model without
+    /// a CoreML build still works fine on Metal/CPU.
+    var coreMLURL: URL?
+    var coreMLSizeBytes: Int64
+    var coreMLSHA256: String?
+
+    /// Hebrew default. The full ivrit.ai `large-v3` finetune (~3 GB, ~2x
+    /// slower than the turbo variant). Empirically noticeably more accurate
+    /// than the turbo finetune on Hebrew speech, which is why we ship it as
+    /// the default despite the size and latency cost.
+    static let ivritLarge = WhisperModel(
+        name: "ivrit-ai-whisper-large-v3",
+        displayName: "ivrit.ai · large-v3 (Hebrew)",
+        url: URL(string: "https://huggingface.co/ivrit-ai/whisper-large-v3-ggml/resolve/main/ggml-model.bin")!,
+        sizeBytes: 3_095_033_483,
+        sha256: "09e66ec67b2e00c6933afab6684cbf78fe023e8ad153c1848f62000e4335a07f",
+        languageHint: "he",
+        // CoreML encoder mlmodelc generated via whisper.cpp's
+        // convert-h5-to-coreml.py against the ivrit-ai HuggingFace
+        // checkpoint, hosted by us at uriharduf/whisper-large-v3-ivrit-coreml
+        // (Apache-2.0, same license as the upstream base model).
+        coreMLURL: URL(string: "https://huggingface.co/uriharduf/whisper-large-v3-ivrit-coreml/resolve/main/ivrit-ai-whisper-large-v3-encoder.mlmodelc.zip")!,
+        coreMLSizeBytes: 1_174_466_438,
+        coreMLSHA256: "a6cf2c2c88cfd011b981d0895d9a9b02db7c8475375d9b026f9cd4ab0d85ae78"
+    )
+
+    /// English (and any other multilingual) default. As of mid-2026 this is
+    /// the open-weights state of the art for English at this size class —
+    /// faster than full `large-v3` for essentially identical English WER, and
+    /// it's the same checkpoint Whisper.cpp ships by default.
+    static let openaiTurbo = WhisperModel(
+        name: "openai-whisper-large-v3-turbo",
+        displayName: "OpenAI · large-v3-turbo (English / multilingual)",
+        url: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin")!,
+        sizeBytes: 1_624_555_275,
+        sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+        languageHint: "en",
+        // CoreML encoder published by ggerganov/whisper.cpp directly.
+        coreMLURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-encoder.mlmodelc.zip")!,
+        coreMLSizeBytes: 1_173_393_014,
+        coreMLSHA256: "84bedfe895bd7b5de6e8e89a0803dfc5addf8c0c5bc4c937451716bf7cf7988a"
+    )
+
+    static let all: [WhisperModel] = [.ivritLarge, .openaiTurbo]
+
+    /// Pick the best model the catalog knows about for a given ISO language
+    /// code. Hebrew goes to ivrit.ai's large-v3 finetune; everything else
+    /// (including the dictation English path) goes to the OpenAI turbo.
+    static func bestModel(for languageCode: String) -> WhisperModel {
+        switch languageCode.lowercased() {
+        case "he", "he-il", "iw":
+            return .ivritLarge
+        default:
+            return .openaiTurbo
+        }
+    }
+}
+
+/// Downloads + tracks installed Whisper models on disk.
+@MainActor
+final class ModelManager: NSObject, ObservableObject {
+    @Published private(set) var installed: Set<String> = []
+    @Published private(set) var downloads: [String: Double] = [:]
+    @Published var selectedModelName: String
+
+    /// Human-readable descriptions of failed model downloads, keyed by
+    /// `WhisperModel.name`. Every failure path of a multi-GB fetch used to
+    /// end in a log line only — the progress row just vanished and the user
+    /// had no idea whether the model installed or why it didn't. Keyed per
+    /// model (not one flat slot) because the two default models auto-download
+    /// concurrently on first launch: starting B must not wipe A's report.
+    /// A new attempt for a model clears only that model's entry; also
+    /// dismissible from the UI.
+    @Published var lastDownloadErrors: [String: String] = [:]
+
+    private let modelsDirectory: URL
+    private let defaults: UserDefaults
+    private static let declinedModelsKey = "model.declinedNames"
+
+    /// Names of models the user explicitly deleted via Settings. Consulted
+    /// by `MilaApp.ensureDefaultModelsInstalled()` so a deliberate delete
+    /// doesn't come back on the next launch — `isInstalled` alone can't
+    /// distinguish "never downloaded" from "downloaded, then removed on
+    /// purpose." Cleared the moment `download(_:)` is called again for that
+    /// model, since that's an explicit request for it.
+    @Published private(set) var declinedModelNames: Set<String>
+
+    /// True when `selectedModelName` was restored from a choice the user
+    /// actually persisted via `setSelected(_:)`, rather than defaulted to the
+    /// catalog's `ivritLarge`. Launch-time bootstrap consults this so it only
+    /// ever *establishes* a default selection on a fresh install: re-asserting
+    /// one on every launch is what silently reverted the user's Settings →
+    /// Models choice, and — once deletion started sticking — kept re-selecting
+    /// a model that is no longer on disk (#264, #266).
+    private(set) var hasPersistedSelection: Bool
+
+    /// Test-only hook: stub `URLProtocol` classes to install on the download
+    /// session's configuration, so tests can exercise `download(_:)` without
+    /// making a real network request. `nil` in production.
+    private let sessionProtocolClasses: [AnyClass]?
+
+    private lazy var session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForResource = 60 * 60
+        // Explicit `self.` — the same closure already needs it for
+        // `delegate: self`, and implicit `self` in a `lazy var` initializer
+        // is not something to rely on.
+        if let stubs = self.sessionProtocolClasses {
+            config.protocolClasses = stubs
+        }
+        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }()
+    private var observers: [Int: WhisperModel] = [:]
+    private var didShutDownSession = false
+
+    init(modelsDirectory: URL, defaults: UserDefaults = .standard, sessionProtocolClasses: [AnyClass]? = nil) {
+        self.modelsDirectory = modelsDirectory
+        self.defaults = defaults
+        self.sessionProtocolClasses = sessionProtocolClasses
+        let lastUsed = defaults.string(forKey: "selectedModelName")
+        self.selectedModelName = lastUsed ?? WhisperModel.ivritLarge.name
+        self.hasPersistedSelection = lastUsed != nil
+        let declined = defaults.array(forKey: Self.declinedModelsKey) as? [String] ?? []
+        self.declinedModelNames = Set(declined)
+        super.init()
+        try? FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
+        refreshInstalled()
+    }
+
+    func selectedModel() -> WhisperModel? {
+        WhisperModel.all.first { $0.name == selectedModelName }
+    }
+
+    func setSelected(_ model: WhisperModel) {
+        selectedModelName = model.name
+        hasPersistedSelection = true
+        defaults.set(model.name, forKey: "selectedModelName")
+    }
+
+    /// The model the app should use when transcribing audio in `languageCode`.
+    /// Falls back to `selectedModel()` if the language-best model isn't
+    /// installed yet (so dictation can still work in offline-but-different
+    /// language mode while a download is in flight).
+    func model(for languageCode: String) -> WhisperModel? {
+        // Legacy `"auto"` (the retired auto-detect option — see
+        // `RecordingLanguage`) resolves through `bestModel` to the turbo, the
+        // explicitly multilingual one, which is the right engine for a
+        // detect-the-language pass. Only reachable by re-transcribing a
+        // recording made before auto-detect was removed.
+        let best = WhisperModel.bestModel(for: languageCode)
+        if isInstalled(best) { return best }
+        return selectedModel().flatMap { isInstalled($0) ? $0 : nil } ?? best
+    }
+
+    /// Test-only override that makes every model's `url(for:)` return the
+    /// same path (typically a small `ggml-tiny.bin` on disk). Lets CI
+    /// run the real WhisperEngine on a fast model without rebuilding
+    /// the production catalog. `isInstalled` returns true while the
+    /// override is set so callers don't gate on the catalog filename
+    /// existing.
+    func setTestModelOverride(_ url: URL?) {
+        testModelOverride = url
+        modelLogger.log("setTestModelOverride: \(url?.path ?? "nil", privacy: .public)")
+    }
+
+    private var testModelOverride: URL?
+
+    func url(for model: WhisperModel) -> URL {
+        if let override = testModelOverride { return override }
+        return modelsDirectory.appendingPathComponent("\(model.name).bin")
+    }
+
+    /// Disk path of the sibling `-encoder.mlmodelc` directory whisper.cpp
+    /// looks for next to the `.bin`. Returns nil if the model has no
+    /// CoreML build defined (Mila falls back to Metal/CPU encoder).
+    func coreMLDirectory(for model: WhisperModel) -> URL? {
+        guard model.coreMLURL != nil else { return nil }
+        return modelsDirectory.appendingPathComponent("\(model.name)-encoder.mlmodelc")
+    }
+
+    /// True iff the model's sibling `.mlmodelc` directory is on disk.
+    /// Independent of whether the `.bin` is present. Used to gate
+    /// "fresh install needs CoreML" auto-download.
+    func isCoreMLInstalled(_ model: WhisperModel) -> Bool {
+        guard let dir = coreMLDirectory(for: model) else { return false }
+        return FileManager.default.fileExists(atPath: dir.path)
+    }
+
+    func isInstalled(_ model: WhisperModel) -> Bool {
+        if testModelOverride != nil { return true }
+        return installed.contains(model.name)
+    }
+
+    func isDeclined(_ model: WhisperModel) -> Bool {
+        declinedModelNames.contains(model.name)
+    }
+
+    func refreshInstalled() {
+        let fm = FileManager.default
+        var found: Set<String> = []
+        for model in WhisperModel.all where fm.fileExists(atPath: url(for: model).path) {
+            found.insert(model.name)
+        }
+        installed = found
+        modelLogger.log("refreshInstalled: dir=\(self.modelsDirectory.path, privacy: .public) found=\(found, privacy: .public)")
+    }
+
+    private func setDeclined(_ declined: Bool, for model: WhisperModel) {
+        if declined {
+            declinedModelNames.insert(model.name)
+        } else {
+            declinedModelNames.remove(model.name)
+        }
+        defaults.set(Array(declinedModelNames), forKey: Self.declinedModelsKey)
+    }
+
+    /// Remove a model's weights from disk and record that the removal was
+    /// deliberate.
+    ///
+    /// The `.bin` and its sibling `<name>-encoder.mlmodelc` are one install,
+    /// so they are one delete: leaving the ~1.1 GB CoreML encoder behind meant
+    /// the user reclaimed far less disk than the confirmation dialog promised,
+    /// with no UI anywhere that could see or remove the orphan (#265).
+    ///
+    /// Ordering matters. `refreshInstalled()` and `setDeclined(true,…)` run as
+    /// soon as the `.bin` is gone and *before* the encoder removal that can
+    /// throw — otherwise a failure there would leave the app believing the
+    /// model is still installed and was never declined, which is exactly the
+    /// state that silently re-downloads it on the next launch (#263).
+    func delete(_ model: WhisperModel) throws {
+        try FileManager.default.removeItem(at: url(for: model))
+        refreshInstalled()
+        setDeclined(true, for: model)
+        // A CoreML fetch for this model may be in flight right now: Settings
+        // offers Delete the moment the `.bin` lands, which is exactly when
+        // `ensureCoreMLInstalled()`/the post-install hook has started the
+        // ~1.1 GB encoder download. Left running it would finish and move the
+        // encoder into place *after* the delete — recreating the very orphan
+        // #265 exists to remove, except now permanent, because the model is
+        // declined so nothing re-checks the pair and no UI can see it.
+        cancelCoreMLDownload(model)
+        if isCoreMLInstalled(model), let coreML = coreMLDirectory(for: model) {
+            try FileManager.default.removeItem(at: coreML)
+        }
+    }
+
+    /// Stop an in-flight CoreML encoder fetch for `model` and forget the UI
+    /// state that went with it, so a deleted model can't keep showing
+    /// download progress.
+    private func cancelCoreMLDownload(_ model: WhisperModel) {
+        guard let task = coreMLTasks.removeValue(forKey: model.name) else { return }
+        task.cancel()
+        coreMLObservers.removeValue(forKey: task.taskIdentifier)
+        coreMLDownloads.removeValue(forKey: model.name)
+    }
+
+    /// Whether an encoder download that has just finished should still be
+    /// installed.
+    ///
+    /// Cancellation alone cannot answer this: by the time `delete(_:)` runs,
+    /// the fetch may already be past its last cancellation point, with the
+    /// bytes on disk and only the final move left. Every step of
+    /// `finishCoreMLDownload` is an `await` that hands the main actor back,
+    /// so the state it read on entry can be stale by the time it commits.
+    /// An encoder is worth installing only next to weights that are still
+    /// there and still wanted.
+    func shouldInstallCoreML(for model: WhisperModel) -> Bool {
+        !isDeclined(model) && isInstalled(model)
+    }
+
+    func download(_ model: WhisperModel) {
+        guard downloads[model.name] == nil else { return }
+        guard !didShutDownSession else { return }
+        setDeclined(false, for: model)
+        // A fresh attempt supersedes the previous failure report for THIS
+        // model only — a concurrent sibling download's error must survive.
+        lastDownloadErrors[model.name] = nil
+        downloads[model.name] = 0
+        let task = session.downloadTask(with: model.url)
+        observers[task.taskIdentifier] = model
+        task.resume()
+    }
+
+    /// Tracks the CoreML zip download keyed by URLSessionTask id, separately
+    /// from the `.bin` `observers` map so a parallel CoreML fetch can't
+    /// race with the .bin's progress callback. The Bool slot in
+    /// `coreMLDownloads` reuses the same UI scheme as `downloads`.
+    private var coreMLObservers: [Int: WhisperModel] = [:]
+    @Published private(set) var coreMLDownloads: [String: Double] = [:]
+
+    /// The in-flight CoreML fetch per model, kept so `delete(_:)` can stop
+    /// one. Keyed by name rather than task id because the caller that needs
+    /// to cancel knows the model, not the task.
+    private var coreMLTasks: [String: URLSessionDownloadTask] = [:]
+
+    /// Download + extract the `<model>-encoder.mlmodelc.zip` from
+    /// `model.coreMLURL` and place the resulting `.mlmodelc` directory
+    /// next to the `.bin`. No-op if the model has no CoreML build or
+    /// it's already installed. Failures are logged but never thrown —
+    /// the app still works without CoreML (encoder runs on Metal).
+    func downloadCoreML(_ model: WhisperModel) {
+        guard let coreMLURL = model.coreMLURL else { return }
+        guard !isCoreMLInstalled(model) else { return }
+        guard coreMLDownloads[model.name] == nil else { return }
+        guard !didShutDownSession else { return }
+        coreMLDownloads[model.name] = 0
+        let task = session.downloadTask(with: coreMLURL)
+        coreMLObservers[task.taskIdentifier] = model
+        coreMLTasks[model.name] = task
+        task.resume()
+    }
+
+    /// Best-effort: kick off auto-downloads for any missing `-encoder.mlmodelc`
+    /// for already-installed `.bin` weights. Called at startup + after
+    /// every successful `.bin` install. The user pays disk + bandwidth
+    /// once per model; subsequent launches see the sibling and skip.
+    func ensureCoreMLInstalled() {
+        for model in WhisperModel.all
+        where isInstalled(model) && !isCoreMLInstalled(model) && model.coreMLURL != nil {
+            modelLogger.notice("Auto-downloading CoreML encoder for \(model.name, privacy: .public)")
+            downloadCoreML(model)
+        }
+    }
+
+    /// Cancel any in-flight downloads and break the URLSession <-> delegate
+    /// retain cycle. Called from the AppDelegate at shutdown so we don't
+    /// crash later in delegate callbacks against a partially-deallocated
+    /// `ModelManager`.
+    func shutdown() {
+        guard !didShutDownSession else { return }
+        didShutDownSession = true
+        observers.removeAll()
+        downloads.removeAll()
+        coreMLTasks.removeAll()
+        session.invalidateAndCancel()
+    }
+
+    enum VerifyError: Swift.Error, LocalizedError {
+        case sha256Mismatch(expected: String, computed: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .sha256Mismatch(let expected, let computed):
+                return "SHA-256 mismatch (expected \(expected), got \(computed))"
+            }
+        }
+    }
+
+    /// Streaming SHA-256 of the file at `fileURL`. Throws `VerifyError`
+    /// on mismatch. Streamed in 1 MiB chunks so we don't have to load the
+    /// whole multi-GB .bin into memory. `nonisolated` so we can dispatch
+    /// the multi-second hash off the main actor.
+    nonisolated static func verifySHA256(at fileURL: URL, expected: String) throws {
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        let computed = hasher.finalize()
+            .map { String(format: "%02x", $0) }
+            .joined()
+        if computed.lowercased() != expected.lowercased() {
+            throw VerifyError.sha256Mismatch(expected: expected, computed: computed)
+        }
+    }
+}
+
+extension ModelManager: URLSessionDownloadDelegate {
+    nonisolated func urlSession(_ session: URLSession,
+                                downloadTask: URLSessionDownloadTask,
+                                didWriteData bytesWritten: Int64,
+                                totalBytesWritten: Int64,
+                                totalBytesExpectedToWrite: Int64) {
+        let id = downloadTask.taskIdentifier
+        Task { @MainActor in
+            if let model = self.observers[id] {
+                let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : model.sizeBytes
+                let progress = Double(totalBytesWritten) / Double(total)
+                self.downloads[model.name] = max(0, min(1, progress))
+            } else if let model = self.coreMLObservers[id] {
+                let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : model.coreMLSizeBytes
+                let progress = Double(totalBytesWritten) / Double(total)
+                self.coreMLDownloads[model.name] = max(0, min(1, progress))
+            }
+        }
+    }
+
+    nonisolated func urlSession(_ session: URLSession,
+                                downloadTask: URLSessionDownloadTask,
+                                didFinishDownloadingTo location: URL) {
+        let id = downloadTask.taskIdentifier
+        let tempCopy = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".bin")
+        let moveErr: Error?
+        do {
+            try FileManager.default.moveItem(at: location, to: tempCopy)
+            moveErr = nil
+        } catch {
+            moveErr = error
+        }
+        Task { @MainActor in
+            // Demultiplex: is this the .bin or the CoreML zip?
+            if let model = self.coreMLObservers.removeValue(forKey: id) {
+                defer {
+                    self.coreMLDownloads.removeValue(forKey: model.name)
+                    self.coreMLTasks.removeValue(forKey: model.name)
+                }
+                await self.finishCoreMLDownload(model: model, tempCopy: tempCopy, moveErr: moveErr)
+                return
+            }
+            guard let model = self.observers.removeValue(forKey: id) else { return }
+            // Keep `downloads[model.name]` set until we're truly done (verified
+            // AND installed, or failed) — otherwise during the multi-second
+            // off-main hash the duplicate-download guard in `download(_:)` and
+            // the auto-download check in `ensureDefaultModelsInstalled` both
+            // see no in-flight download and can kick off a redundant fetch of
+            // the same 3 GB file.
+            defer {
+                self.downloads.removeValue(forKey: model.name)
+                // Now that the .bin is on disk, auto-fetch the sibling
+                // CoreML encoder (no-op if absent or already installed).
+                self.downloadCoreML(model)
+            }
+            if let moveErr {
+                modelLogger.error("Download \(model.name, privacy: .public): failed to capture URLSession temp file: \(moveErr.localizedDescription, privacy: .public)")
+                self.lastDownloadErrors[model.name] = "\(model.displayName): download failed (\(moveErr.localizedDescription))"
+                return
+            }
+            // A 404/403 from HuggingFace delivers an HTML error page that
+            // would only surface later as a baffling hash mismatch — report
+            // the HTTP failure directly instead.
+            if let http = downloadTask.response as? HTTPURLResponse,
+               !(200..<300).contains(http.statusCode) {
+                try? FileManager.default.removeItem(at: tempCopy)
+                modelLogger.error("Download \(model.name, privacy: .public): server returned HTTP \(http.statusCode, privacy: .public)")
+                self.lastDownloadErrors[model.name] = "\(model.displayName): server returned HTTP \(http.statusCode)"
+                return
+            }
+            // Hash off the main actor — for the 3 GB ivritLarge model this is
+            // a multi-second blocking read, and we don't want to freeze the UI
+            // (progress sheet, settings list) while it runs.
+            let expected = model.sha256
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try ModelManager.verifySHA256(at: tempCopy, expected: expected)
+                }.value
+                modelLogger.notice("Download \(model.name, privacy: .public): SHA-256 verified")
+            } catch {
+                try? FileManager.default.removeItem(at: tempCopy)
+                modelLogger.error("Download \(model.name, privacy: .public): integrity check failed: \(error.localizedDescription, privacy: .public)")
+                self.lastDownloadErrors[model.name] = "\(model.displayName): downloaded file failed its integrity check — try again"
+                return
+            }
+            let dest = self.url(for: model)
+            try? FileManager.default.removeItem(at: dest)
+            do {
+                try FileManager.default.moveItem(at: tempCopy, to: dest)
+                modelLogger.notice("Download \(model.name, privacy: .public): installed at \(dest.path, privacy: .public)")
+            } catch {
+                modelLogger.error("Download \(model.name, privacy: .public): final move failed: \(error.localizedDescription, privacy: .public)")
+                self.lastDownloadErrors[model.name] = "\(model.displayName): could not install (\(error.localizedDescription))"
+            }
+            self.refreshInstalled()
+        }
+    }
+
+    nonisolated func urlSession(_ session: URLSession,
+                                task: URLSessionTask,
+                                didCompleteWithError error: Error?) {
+        guard let error else { return }
+        let id = task.taskIdentifier
+        Task { @MainActor in
+            if let model = self.observers.removeValue(forKey: id) {
+                self.downloads.removeValue(forKey: model.name)
+                modelLogger.error("Download \(model.name, privacy: .public): network/task failure: \(error.localizedDescription, privacy: .public)")
+                self.lastDownloadErrors[model.name] = "\(model.displayName): download failed (\(error.localizedDescription))"
+            } else if let model = self.coreMLObservers.removeValue(forKey: id) {
+                self.coreMLDownloads.removeValue(forKey: model.name)
+                self.coreMLTasks.removeValue(forKey: model.name)
+                modelLogger.error("CoreML download \(model.name, privacy: .public): network/task failure: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// Finish a CoreML zip download: verify SHA-256, unzip into a temp dir,
+    /// move the inner `.mlmodelc` directory to its sibling slot next to
+    /// the `.bin`. Errors are logged but never thrown — Mila still works
+    /// on Metal/CPU when CoreML isn't available.
+    fileprivate func finishCoreMLDownload(model: WhisperModel, tempCopy: URL, moveErr: Error?) async {
+        if let moveErr {
+            modelLogger.error("CoreML download \(model.name, privacy: .public): URLSession temp move failed: \(moveErr.localizedDescription, privacy: .public)")
+            return
+        }
+        guard let expected = model.coreMLSHA256 else {
+            try? FileManager.default.removeItem(at: tempCopy)
+            modelLogger.error("CoreML download \(model.name, privacy: .public): no expected SHA-256 in catalog — refusing to install unverified bytes")
+            return
+        }
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try ModelManager.verifySHA256(at: tempCopy, expected: expected)
+            }.value
+            modelLogger.notice("CoreML download \(model.name, privacy: .public): SHA-256 verified")
+        } catch {
+            try? FileManager.default.removeItem(at: tempCopy)
+            modelLogger.error("CoreML download \(model.name, privacy: .public): integrity check failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        guard let destDir = coreMLDirectory(for: model) else {
+            try? FileManager.default.removeItem(at: tempCopy)
+            return
+        }
+
+        // Unzip + place atomically. Existing dir gets blown away first so a
+        // half-extracted state from a previous crash doesn't poison this
+        // install.
+        let extractRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mlmodelc-extract-\(UUID().uuidString)")
+        do {
+            try FileManager.default.createDirectory(at: extractRoot, withIntermediateDirectories: true)
+        } catch {
+            modelLogger.error("CoreML download \(model.name, privacy: .public): failed to create extract dir: \(error.localizedDescription, privacy: .public)")
+            try? FileManager.default.removeItem(at: tempCopy)
+            return
+        }
+        defer { try? FileManager.default.removeItem(at: extractRoot) }
+
+        do {
+            try await Task.detached(priority: .userInitiated) { [extractRoot] in
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+                p.arguments = ["-q", tempCopy.path, "-d", extractRoot.path]
+                try p.run()
+                p.waitUntilExit()
+                if p.terminationStatus != 0 {
+                    throw NSError(domain: "ModelManager.CoreML", code: Int(p.terminationStatus),
+                                  userInfo: [NSLocalizedDescriptionKey: "unzip exited \(p.terminationStatus)"])
+                }
+            }.value
+        } catch {
+            modelLogger.error("CoreML download \(model.name, privacy: .public): unzip failed: \(error.localizedDescription, privacy: .public)")
+            try? FileManager.default.removeItem(at: tempCopy)
+            return
+        }
+        try? FileManager.default.removeItem(at: tempCopy)
+
+        // Find the `.mlmodelc` directory inside the extracted tree (the
+        // zip might wrap it in `<name>.mlmodelc/` or in a subdir — both
+        // ggerganov and our HF repo use the flat layout, but be defensive).
+        guard let mlmodelc = ModelManager.findMLModelcDirectory(in: extractRoot) else {
+            modelLogger.error("CoreML download \(model.name, privacy: .public): no .mlmodelc directory inside the zip")
+            return
+        }
+
+        // Re-check before committing: `delete(_:)` may have run during any of
+        // the awaits above. `extractRoot` is cleaned up by the `defer`, so
+        // returning here leaves nothing behind. This guard has to come before
+        // the removal below — bailing out after clearing `destDir` would
+        // destroy an encoder we were not asked to touch.
+        guard shouldInstallCoreML(for: model) else {
+            modelLogger.notice("CoreML download \(model.name, privacy: .public): discarding finished encoder — the model was deleted while it downloaded")
+            return
+        }
+
+        if FileManager.default.fileExists(atPath: destDir.path) {
+            try? FileManager.default.removeItem(at: destDir)
+        }
+        do {
+            try FileManager.default.moveItem(at: mlmodelc, to: destDir)
+            modelLogger.notice("CoreML download \(model.name, privacy: .public): installed at \(destDir.path, privacy: .public)")
+        } catch {
+            modelLogger.error("CoreML download \(model.name, privacy: .public): final move failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Recursively search `root` for the first `*.mlmodelc` directory.
+    /// Skips `__MACOSX/` clutter from zips made on macOS Finder.
+    nonisolated static func findMLModelcDirectory(in root: URL) -> URL? {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: root,
+                                             includingPropertiesForKeys: [.isDirectoryKey],
+                                             options: [.skipsHiddenFiles]) else { return nil }
+        for case let url as URL in enumerator {
+            if url.lastPathComponent == "__MACOSX" {
+                enumerator.skipDescendants()
+                continue
+            }
+            if url.pathExtension == "mlmodelc",
+               let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory,
+               isDir {
+                return url
+            }
+        }
+        return nil
+    }
+}

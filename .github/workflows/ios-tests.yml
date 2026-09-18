@@ -1,0 +1,230 @@
+name: App Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit-and-ui-tests:
+    # macos-15 ships Xcode 16, which matches the project file format
+    # xcodegen produces locally. macos-14 (Xcode 15.4) rejects it as
+    # "future project file format (77)".
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      # Build (or restore from cache) the bundled Python runtime so the
+      # produced .app contains it and the bundled-python flow is
+      # exercised end-to-end. Cache key on the script SHA — change to
+      # the script invalidates the cache. Cold runs add ~10 min; hot
+      # restores are seconds.
+      - name: Cache diarization bundle
+        id: diar-bundle-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: Mila/Resources/PythonRuntime
+          key: diar-bundle-${{ runner.os }}-${{ hashFiles('scripts/build-diarization-bundle.sh') }}
+
+      - name: Build diarization bundle (cold path only)
+        if: steps.diar-bundle-cache.outputs.cache-hit != 'true'
+        run: make bundle-diarization
+
+      - name: Smoke-test bundled python
+        run: |
+          # We deliberately don't bundle torch (it gets runtime-downloaded
+          # by DiarizationBootstrap), and pyannote.audio's __init__.py
+          # imports torch unconditionally. So `import pyannote.audio`
+          # fails by design until the user enables diarization. Verify
+          # via dist-info metadata instead — it confirms pyannote was
+          # installed without triggering the torch import.
+          BUNDLED=Mila/Resources/PythonRuntime/python/bin/python3.11
+          "$BUNDLED" --version
+          PYTHONPATH=Mila/Resources/PythonRuntime/python/site-packages \
+            "$BUNDLED" -c "from importlib.metadata import version; print('pyannote.audio:', version('pyannote.audio')); print('numpy:', version('numpy')); print('scipy:', version('scipy'))"
+          # pyannote.core is a separate package without a torch dep, so
+          # importing it does work and confirms the path is correct.
+          PYTHONPATH=Mila/Resources/PythonRuntime/python/site-packages \
+            "$BUNDLED" -c "import pyannote.core; print('pyannote.core importable')"
+
+      - name: Generate Xcode project
+        run: make project
+
+      # The macos-15 image ships with a stale SwiftPM artifact cache that
+      # occasionally rejects fresh downloads with "...zip already exists
+      # in file system" — wipe it to keep package resolution deterministic.
+      # Same workaround as .github/workflows/ci.yml.
+      - name: Clear SwiftPM caches
+        run: |
+          rm -rf ~/Library/Caches/org.swift.swiftpm
+          rm -rf ~/Library/org.swift.swiftpm
+          rm -rf ~/Library/Developer/Xcode/DerivedData/SourcePackages
+
+      - name: Resolve SwiftPM dependencies
+        run: |
+          xcodebuild -project Mila.xcodeproj \
+            -scheme Mila \
+            -derivedDataPath build \
+            -destination 'platform=macOS' \
+            -resolvePackageDependencies
+
+      - name: Run unit tests
+        env:
+          # Opts in MilaTests/AppSceneChurnTests: it drives the HOST APP's real
+          # recording controller for ~12 s of fixture audio and asserts a
+          # publish budget per App-level object (the #280 class of bug — a
+          # @StateObject on MilaApp publishing per audio buffer). CI-only
+          # because on a developer's machine the same run would boot their
+          # diarization runtime and fire their configured LLM. Set in both
+          # forms: xcodebuild forwards `TEST_RUNNER_`-prefixed vars into the
+          # test process with the prefix stripped, and the plain form is what
+          # the audio-loopback job relies on for the same bundle — the step
+          # after the run checks the test actually PASSED rather than skipped,
+          # so a delivery regression cannot hide behind a green job.
+          MILA_APP_CHURN_E2E: "1"
+          TEST_RUNNER_MILA_APP_CHURN_E2E: "1"
+        run: |
+          set -o pipefail
+          # `-retry-tests-on-failure -test-iterations 3`: the subprocess-spawning
+          # tests (LLMRunner / RecordingSummarizer) and detached-Task tests
+          # (prewarm) flake intermittently under CI runner load. Retry failed
+          # tests up to 3× (early-exit on first pass) so a load-induced flake
+          # doesn't red the build; genuine failures still fail all 3 attempts.
+          # `-test-timeouts-enabled` + allowances bound a HANG (which retries
+          # can't catch) instead of the 30-min job cap — a stuck subprocess
+          # test used to run this whole job out to timeout. 240s default
+          # leaves room for the slowest legit test (the model-reenqueue test
+          # awaits waitForIdle TWICE, up to 90s each under load) while still
+          # bounding a true hang to minutes. Mirrors ci.yml's build-and-test.
+          #
+          # `tee` before `tail` (issue #208). `tail -200` alone is why nobody
+          # could diagnose the flakes in this job: a ~1000-test run emits
+          # thousands of lines, so the only thing that ever reached the log
+          # was the closing summary. A suite in the alphabetical middle could
+          # fail and its assertion message — the one line that says WHY —
+          # was gone before the log was written. Keep the whole thing on disk
+          # so the summary step below can mine it and the artifact carries it.
+          mkdir -p build
+          xcodebuild -project Mila.xcodeproj \
+            -scheme Mila \
+            -configuration Debug \
+            -derivedDataPath build \
+            -destination 'platform=macOS' \
+            -only-testing:MilaTests \
+            -retry-tests-on-failure \
+            -test-iterations 3 \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 240 \
+            -maximum-test-execution-time-allowance 480 \
+            test 2>&1 | tee build/unit-tests.log | tail -200
+
+      # The App-scene churn budget (#283) is gated on an env var, and a gated
+      # test that XCTSkips leaves the job green — which is exactly how a
+      # per-buffer @StateObject publish (#280) would ship again. Require the
+      # test to have PASSED, and surface its one-line report (per-object
+      # publish counts + main-thread CPU fraction) so the budgets can be read
+      # against a real runner without downloading the log.
+      - name: Verify the App-scene churn test ran
+        run: |
+          log=build/unit-tests.log
+          line=$(grep -E "^Test Case '-\[MilaTests\.AppSceneChurnTests test_live_recording_stays_within_the_app_scene_publish_budget\]' (passed|failed|skipped)" "$log" | tail -1 || true)
+          report=$(grep -E "^AppSceneChurn: " "$log" | tail -1 || true)
+          echo "result: ${line:-<not found>}"
+          echo "report: ${report:-<none>}"
+          {
+            echo "### App-scene churn budget (#283)"
+            echo
+            echo '```'
+            echo "${line:-test case line not found in log}"
+            echo "${report:-no AppSceneChurn: report line}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$line" in
+            *"' passed"*) ;;
+            *) echo "::error::AppSceneChurnTests did not pass (skipped or missing) — is MILA_APP_CHURN_E2E reaching the test host?"; exit 1 ;;
+          esac
+
+      # Issue #208: with `-retry-tests-on-failure`, a green job can sit on top
+      # of a pile of failed executions — one run logged
+      # "Executed 929 tests ... 7 failures" followed by "** TEST SUCCEEDED **".
+      # Those recovered flakes are the trend worth watching, and today they are
+      # invisible unless someone downloads the raw log. Surface the count and
+      # the failure lines in the job summary, pass or fail.
+      - name: Summarise test failures
+        if: always()
+        run: |
+          log=build/unit-tests.log
+          [ -f "$log" ] || exit 0
+          # `|| true`: grep exits 1 when it matches nothing, which is the
+          # good case here and must not fail the step.
+          executions=$(grep -c "^Test Case .* failed (" "$log" || true)
+          # Print to STDOUT as well as the step summary. The summary is nice to
+          # look at but has no API, so it cannot be read back by anything but a
+          # human with a browser — which is how a whole CI round was spent on
+          # this PR unable to see an assertion message that had been captured.
+          # The job log IS retrievable, and this step's output is short enough
+          # to survive being at the end of it.
+          echo "===== failure lines from $log ====="
+          grep -E "^Test Case .* failed \(|: error: |^Failing tests:" "$log" | head -60 || true
+          echo "===== end failure lines ====="
+          {
+            echo "### Unit tests"
+            echo
+            echo "Failed test-case **executions**: ${executions:-0} (counts every retry iteration, so a green job can show a non-zero number — that is the point)."
+            echo
+            echo "<details><summary>Failure lines</summary>"
+            echo
+            echo '```'
+            # Three shapes, all of them things you cannot get from the tail:
+            # the per-case "failed" lines (one per retry iteration), the
+            # `file:line: error:` assertion messages, and the closing
+            # `Failing tests:` block plus its indented `Suite.test()` names.
+            # `[[:space:]]` not `\s` — BSD grep on the macOS runner has no
+            # `\s` in ERE.
+            grep -E "^Test Case .* failed \(|: error: |^Failing tests:|^[[:space:]]+[A-Za-z_][A-Za-z0-9_.]*\(\)$" "$log" | head -200 || true
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run UI tests
+        # XCUIApplication.launch() repeatedly fails on GitHub-hosted
+        # macos-15 runners with "Failed to activate application
+        # (current state: Running Background)" — there's no active
+        # window-server session for the test runner to foreground the
+        # app into. We accept the loss in CI coverage because the unit
+        # test suite already covers the underlying model + controller
+        # logic; the UI tests remain runnable locally for any developer
+        # who needs to verify navigation flows after a refactor.
+        if: ${{ vars.RUN_UI_TESTS_IN_CI == 'true' }}
+        run: |
+          set -o pipefail
+          xcodebuild -project Mila.xcodeproj \
+            -scheme Mila \
+            -configuration Debug \
+            -derivedDataPath build \
+            -destination 'platform=macOS' \
+            -only-testing:MilaUITests \
+            test 2>&1 | tail -300
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: xcresult
+          # The raw xcodebuild log travels with the xcresult (issue #208): the
+          # bundle is ~115 MB and awkward to read, whereas the log answers
+          # "which assertion failed, and on which iteration" with a grep.
+          path: |
+            build/Logs/Test/*.xcresult
+            build/unit-tests.log
+          retention-days: 7

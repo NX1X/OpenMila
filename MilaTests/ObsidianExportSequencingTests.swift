@@ -1,0 +1,319 @@
+import XCTest
+@testable import Mila
+
+/// Verifies the sequencing contract between `RecordingSummarizer` and
+/// `ObsidianExporter`: a fresh completion is marked pending and exported only
+/// once the summary is ready, while a summary produced without being marked
+/// pending (e.g. launch-time backfill) is NOT exported — no vault spam.
+@MainActor
+final class ObsidianExportSequencingTests: XCTestCase {
+
+    private var tempRoot: URL!
+    private var vault: URL!
+    private var store: RecordingStore!
+    private var llmDefaults: UserDefaults!
+    private var liveDefaults: UserDefaults!
+    private var obsidianDefaults: UserDefaults!
+    private var suiteNames: [String] = []
+    private var llm: LLMSettings!
+    private var liveAI: LiveAISettings!
+    private var settings: ObsidianVaultSettings!
+    private var exporter: ObsidianExporter!
+    private var summarizer: RecordingSummarizer!
+
+    override func setUp() async throws {
+        try await super.setUp()
+        tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MilaObsidianSeqTests-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        vault = tempRoot.appendingPathComponent("Vault", isDirectory: true)
+        try FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
+        store = RecordingStore(rootDirectory: tempRoot.appendingPathComponent("AppSupport", isDirectory: true))
+
+        let llmSuite = "ObsidianSeq.llm.\(UUID())"
+        let liveSuite = "ObsidianSeq.live.\(UUID())"
+        let obsSuite = "ObsidianSeq.obs.\(UUID())"
+        suiteNames = [llmSuite, liveSuite, obsSuite]
+        llmDefaults = UserDefaults(suiteName: llmSuite)
+        liveDefaults = UserDefaults(suiteName: liveSuite)
+        obsidianDefaults = UserDefaults(suiteName: obsSuite)
+        llm = LLMSettings(defaults: llmDefaults)
+        llm.tool = .claude
+        liveAI = LiveAISettings(defaults: liveDefaults)
+        liveAI.model = ""
+
+        settings = ObsidianVaultSettings(defaults: obsidianDefaults)
+        settings.enabled = true
+        settings.subfolder = ""
+        XCTAssertTrue(settings.setVault(vault))
+        exporter = ObsidianExporter(settings: settings, defaults: obsidianDefaults)
+
+        // Wire the hook exactly like MilaApp does.
+        summarizer = RecordingSummarizer(store: store, llmSettings: llm, liveAISettings: liveAI,
+                                         runLLM: { _, _, _, _, _, _, _, _, _, _, _ in "A tidy summary." })
+        summarizer.onSummaryFinished = { [weak exporter] rec in
+            guard let exporter, exporter.isPending(rec.id) else { return }
+            exporter.export(rec)
+            exporter.clearPending(rec.id)
+        }
+    }
+
+    override func tearDown() async throws {
+        if let tempRoot { try? FileManager.default.removeItem(at: tempRoot) }
+        for name in suiteNames { UserDefaults().removePersistentDomain(forName: name) }
+        try await super.tearDown()
+    }
+
+    /// Rebuild the summarizer with a stub that fails, keeping the same hook
+    /// wiring MilaApp uses. Models "the LLM call blew up" and, combined with a
+    /// delete, "the user cancelled/deleted while it was in flight".
+    private func useFailingLLM() {
+        struct StubFailure: Error {}
+        summarizer = RecordingSummarizer(store: store, llmSettings: llm, liveAISettings: liveAI,
+                                         runLLM: { _, _, _, _, _, _, _, _, _, _, _ in
+                                             throw StubFailure()
+                                         })
+        summarizer.onSummaryFinished = { [weak exporter] rec in
+            guard let exporter, exporter.isPending(rec.id) else { return }
+            exporter.export(rec)
+            exporter.clearPending(rec.id)
+        }
+    }
+
+    private func addRecording(fullText: String = "some transcript") -> Recording {
+        let audioURL = store.freshAudioURL(suggestedName: "Rec")
+        try? Data("x".utf8).write(to: audioURL)
+        let rec = Recording(title: "Rec", source: .microphone,
+                            audioFileName: audioURL.lastPathComponent, fullText: fullText)
+        store.add(rec)
+        return rec
+    }
+
+    func test_pending_recording_is_exported_after_summary() async throws {
+        let rec = addRecording()
+        exporter.markPending(rec.id)
+        summarizer.summarizeIfNeeded(rec)
+        await summarizer.awaitInFlight(rec.id)
+
+        let expected = vault.appendingPathComponent(ObsidianExporter.fileName(for: rec))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: expected.path),
+                      "a pending recording should be written once its summary lands")
+        let contents = try String(contentsOf: expected, encoding: .utf8)
+        XCTAssertTrue(contents.contains("A tidy summary."))
+    }
+
+    func test_non_pending_summary_is_not_exported() async throws {
+        let rec = addRecording()
+        // No markPending — models a backfill sweep.
+        summarizer.summarizeIfNeeded(rec)
+        await summarizer.awaitInFlight(rec.id)
+
+        let expected = vault.appendingPathComponent(ObsidianExporter.fileName(for: rec))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expected.path),
+                       "a summary produced without a pending mark must not be filed")
+    }
+
+    func test_pending_export_falls_back_to_transcript_when_summaries_disabled() async throws {
+        llm.summaryEnabled = false   // no summary will be generated
+        let rec = addRecording(fullText: "the raw transcript body")
+        exporter.markPending(rec.id)
+        // summarizeIfNeeded skips synchronously and fires onSummaryFinished.
+        summarizer.summarizeIfNeeded(rec)
+        await summarizer.awaitInFlight(rec.id)
+
+        let expected = vault.appendingPathComponent(ObsidianExporter.fileName(for: rec))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: expected.path))
+        let contents = try String(contentsOf: expected, encoding: .utf8)
+        XCTAssertTrue(contents.contains("## Transcript"))
+        XCTAssertTrue(contents.contains("the raw transcript body"))
+    }
+
+    /// A failed summary still resolves the pending export — it must not hang
+    /// waiting for a summary that will never arrive.
+    func test_failed_summary_still_exports_the_transcript() async throws {
+        useFailingLLM()
+        let rec = addRecording(fullText: "the raw transcript body")
+        exporter.markPending(rec.id)
+        summarizer.summarizeIfNeeded(rec)
+        await summarizer.awaitInFlight(rec.id)
+
+        let expected = vault.appendingPathComponent(ObsidianExporter.fileName(for: rec))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: expected.path),
+                      "a failed summary must fall back, not stall the export")
+        XCTAssertFalse(exporter.isPending(rec.id), "the pending mark must be cleared")
+    }
+
+    /// Deleted mid-flight: the failure path must not fire the hook with the
+    /// stale enqueue-time copy, or a recording the user just deleted lands in
+    /// the vault anyway.
+    func test_recording_deleted_mid_flight_is_not_exported() async throws {
+        useFailingLLM()
+        let rec = addRecording(fullText: "the raw transcript body")
+        exporter.markPending(rec.id)
+        summarizer.summarizeIfNeeded(rec)
+        store.permanentlyDelete(rec)
+        await summarizer.awaitInFlight(rec.id)
+
+        let expected = vault.appendingPathComponent(ObsidianExporter.fileName(for: rec))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expected.path),
+                       "a recording deleted mid-flight must not be filed")
+    }
+
+    /// The same race on the SUCCESS path. `test_recording_deleted_mid_flight…`
+    /// above forces a failure, so it only exercises the `catch` block's
+    /// liveness check; this one lets the summary complete normally so the
+    /// separate guard on the success path (`RecordingSummarizer`'s
+    /// "is this recording still in the store?" lookup) is the thing under test.
+    func test_recording_deleted_mid_flight_is_not_exported_on_the_success_path() async throws {
+        let rec = addRecording(fullText: "the raw transcript body")
+        exporter.markPending(rec.id)
+        summarizer.summarizeIfNeeded(rec)
+        store.permanentlyDelete(rec)
+        await summarizer.awaitInFlight(rec.id)
+
+        let expected = vault.appendingPathComponent(ObsidianExporter.fileName(for: rec))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expected.path),
+                       "a recording deleted mid-flight must not be filed, "
+                       + "even when its summary succeeds")
+    }
+
+    /// Trashed mid-flight: the hook does fire (the row is still in the store),
+    /// but the exporter refuses to file a trashed recording.
+    func test_recording_trashed_mid_flight_is_not_exported() async throws {
+        let rec = addRecording()
+        exporter.markPending(rec.id)
+        summarizer.summarizeIfNeeded(rec)
+        store.softDelete(rec)
+        await summarizer.awaitInFlight(rec.id)
+
+        let expected = vault.appendingPathComponent(ObsidianExporter.fileName(for: rec))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expected.path),
+                       "a recording trashed mid-flight must not be filed")
+    }
+
+    // MARK: - Discard un-exports
+
+    /// The export already landed before the user hit Discard — the note has to
+    /// come back out of the vault, or discarding is something the app visibly
+    /// ignored.
+    func test_discardNote_removes_an_already_exported_note() async throws {
+        let rec = addRecording()
+        exporter.markPending(rec.id)
+        summarizer.summarizeIfNeeded(rec)
+        await summarizer.awaitInFlight(rec.id)
+        let expected = vault.appendingPathComponent(ObsidianExporter.fileName(for: rec))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: expected.path), "precondition")
+
+        exporter.discardNote(for: rec)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expected.path),
+                       "the note for a discarded recording is still in the vault")
+    }
+
+    /// The other ordering: Discard lands while the summary is still running,
+    /// so the export hasn't happened yet and must never happen.
+    func test_discard_before_the_summary_lands_blocks_the_export() async throws {
+        let rec = addRecording()
+        exporter.markPending(rec.id)
+        summarizer.summarizeIfNeeded(rec)
+        exporter.discardNote(for: rec)
+        await summarizer.awaitInFlight(rec.id)
+
+        let expected = vault.appendingPathComponent(ObsidianExporter.fileName(for: rec))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expected.path),
+                       "a summary landing after Discard must not file the note")
+        XCTAssertFalse(exporter.isPending(rec.id))
+    }
+
+    /// Nothing was ever written for this recording — removal is a no-op rather
+    /// than a delete of whatever happens to share the name.
+    func test_discardNote_is_a_noop_when_nothing_was_exported() {
+        let rec = addRecording()
+        XCTAssertNil(exporter.discardNote(for: rec))
+    }
+
+    /// Discard has to be a TOMBSTONE, not a cleared flag.
+    /// `PostRecordingCoordinator.cancelAndDiscard` does not cancel
+    /// `QuickActionsController.finalizeTail`, which is still running — on the
+    /// VAD path it awaits the OFFLINE re-diarize — and ends by re-`markPending`ing
+    /// the same id. A *skipped* summary (summaries off, LLM unconfigured, empty
+    /// transcript) then fires `onSummaryFinished` synchronously with a fallback
+    /// snapshot, and that hook's only gate is `isPending`. So with a cleared
+    /// flag the note lands for a recording the user threw away.
+    func test_a_late_finalize_tail_cannot_re_export_a_discarded_recording() async throws {
+        let rec = addRecording()
+        // The reachable path: no summary will be generated, so the completion
+        // hook fires synchronously rather than going through `runSummary`
+        // (whose "is the row still in the store?" lookup already covers the
+        // success path).
+        llm.summaryEnabled = false
+
+        exporter.discardNote(for: rec)
+        store.permanentlyDelete(rec)   // as `cancelAndDiscard` does
+
+        // `finalizeTail`, still in flight, re-arms and drives the summary.
+        exporter.markPending(rec.id)
+        XCTAssertFalse(exporter.isPending(rec.id),
+                       "a discarded recording must not be able to re-arm the export gate")
+        summarizer.summarizeIfNeeded(rec)
+        await summarizer.awaitInFlight(rec.id)
+
+        let expected = vault.appendingPathComponent(ObsidianExporter.fileName(for: rec))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expected.path),
+                       "a recording the user discarded must not be filed by a late completion hook")
+    }
+
+    /// A failed delete must not forget where the note is. The written-index
+    /// entry is the ONLY record of the path, so dropping it before `removeItem`
+    /// succeeds strands the transcript the user threw away in the vault with no
+    /// way for any later discard to find it.
+    func test_a_failed_removal_keeps_the_index_entry_for_a_retry() throws {
+        let failingExporter = ObsidianExporter(settings: settings,
+                                               defaults: obsidianDefaults,
+                                               fileManager: RemoveFailingFileManager())
+        let rec = addRecording()
+        let note = try XCTUnwrap(failingExporter.export(rec), "precondition: the note was written")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: note.path))
+
+        XCTAssertNil(failingExporter.discardNote(for: rec),
+                     "a removal that failed must not report a removed file")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: note.path),
+                      "precondition: the stubbed delete really did fail")
+
+        // A fresh exporter over the SAME index — this is the retry path, and it
+        // only exists if the entry survived the failure above.
+        let retry = ObsidianExporter(settings: settings, defaults: obsidianDefaults)
+        XCTAssertNotNil(retry.discardNote(for: rec),
+                        "the index entry must survive a failed removal so a retry can find the note")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: note.path),
+                       "the retry must actually take the note out of the vault")
+    }
+
+    /// The hook fires exactly once per attempt: a second export for the same
+    /// recording only happens on a second, deliberate summarize attempt.
+    func test_hook_fires_once_per_attempt() async throws {
+        final class Recorder { var ids: [UUID] = [] }
+        let fired = Recorder()
+        summarizer.onSummaryFinished = { fired.ids.append($0.id) }
+        let rec = addRecording()
+        summarizer.summarizeIfNeeded(rec)
+        // A duplicate call while the first is in flight is deduped and must
+        // NOT produce a second signal.
+        summarizer.summarizeIfNeeded(rec)
+        summarizer.regenerate(rec)
+        await summarizer.awaitInFlight(rec.id)
+
+        XCTAssertEqual(fired.ids, [rec.id], "one attempt in flight must yield exactly one signal")
+    }
+}
+
+/// Every operation is the real `FileManager` except `removeItem`, which always
+/// fails. Models a vault the app can read and write but not delete from — a
+/// read-only volume, a permissions change, or an offline network mount.
+private final class RemoveFailingFileManager: FileManager {
+    override func removeItem(at url: URL) throws {
+        throw NSError(domain: NSCocoaErrorDomain,
+                      code: NSFileWriteNoPermissionError,
+                      userInfo: [NSFilePathErrorKey: url.path])
+    }
+}

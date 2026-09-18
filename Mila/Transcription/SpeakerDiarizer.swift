@@ -1,0 +1,754 @@
+import Foundation
+import os
+
+struct SpeakerTurn: Codable {
+    let start: Double
+    let end: Double
+    let speaker: String
+}
+
+enum SpeakerDiarizer {
+
+    private static var bundledModelsPath: String? {
+        Bundle.main.path(forResource: "DiarizationModels", ofType: nil)
+    }
+
+    /// Effective Python the subprocesses should launch. Bundle path wins if
+    /// it exists (built via `make bundle-diarization` and bundled in
+    /// Resources/PythonRuntime/); otherwise we fall back to whatever path
+    /// the user has configured in DiarizationSettings (typically
+    /// /usr/bin/python3). The bundle path is preferred because it lets the
+    /// app run on machines without a working system pyannote install.
+    static func resolvePython(userConfigured: String) -> String {
+        DiarizationBootstrap.bundledPythonPath ?? userConfigured
+    }
+
+    /// Environment additions to make bundled site-packages visible.
+    /// Returns an empty dict when no bundle is present, so behaviour for
+    /// users on the legacy system-python flow is unchanged.
+    static func pythonEnvironment() -> [String: String] {
+        let path = DiarizationBootstrap.combinedPythonPath
+        return path.isEmpty ? [:] : ["PYTHONPATH": path]
+    }
+
+    enum Error: Swift.Error, LocalizedError {
+        case pythonNotFound(String)
+        case diarizationFailed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .pythonNotFound(let path):
+                return "Python not found at \(path). Install Python 3 with pyannote.audio."
+            case .diarizationFailed(let msg):
+                return "Speaker diarization failed: \(msg)"
+            }
+        }
+
+        /// The log-safe twin of `errorDescription`, matching
+        /// `LLMRunnerError.logDescription`.
+        ///
+        /// `.diarizationFailed` is built from the Python subprocess's stderr
+        /// (falling back to its stdout), and that stderr is not neutral: the
+        /// inline diarize script prints `diarize: running on {wav_path}`, and
+        /// the WAV's name is derived from the recording's title — see
+        /// `RecordingStore.freshAudioURL(suggestedName:)` and
+        /// `FileTranscriber`'s `safeStem`. A traceback also quotes the path.
+        /// So logging the message `.public` publishes the meeting title, the
+        /// same way `LLMRunnerError.nonZeroExit` published the transcript.
+        /// (Issues #213 / #193, CWE-532.)
+        ///
+        /// `.pythonNotFound` passes through: the interpreter path is a value
+        /// the user typed into Settings → Speakers, it names no recording, and
+        /// it is the entire diagnostic.
+        var logDescription: String {
+            switch self {
+            case .pythonNotFound:
+                return errorDescription ?? "\(self)"
+            case .diarizationFailed(let msg):
+                return "Speaker diarization failed (\(msg.utf8.count)B of subprocess output withheld)"
+            }
+        }
+
+        /// The log-safe message for any error a diarization call can throw —
+        /// applied where the concrete type is still unknown, since callers
+        /// catch `Error` and a cancellation or a decode failure lands here too.
+        ///
+        /// The fallback is deliberately **not** `localizedDescription`, for the
+        /// same reason as `MilaConfig.LoadError.logMessage(for:)`: `diarize` is
+        /// a file-open path. Any recording that is not already a WAV goes
+        /// through `AudioCompressor.decodeToTempWAV`, so an
+        /// `AVAudioFile(forReading:)` failure on a title-derived `.m4a` in the
+        /// user-chosen recordings folder arrives here as a plain `NSError` —
+        /// the shape Cocoa fills with the file's name and its containing
+        /// folder. Passing it through undid the redaction the two
+        /// `SpeakerDiarizer.Error` cases above had just applied, at the same
+        /// two `.public` log fields. Domain + code keep it diagnosable without
+        /// guessing. (Issue #213, CWE-532.)
+        ///
+        /// Cancellation is named explicitly because it is the common non-error
+        /// arrival here and carries nothing worth withholding — a bare
+        /// `[Swift.CancellationError 1]` would be the over-redaction
+        /// `bugbot-rules/no-user-content-in-logs.md` warns about.
+        static func logMessage(for error: Swift.Error) -> String {
+            if let diarError = error as? SpeakerDiarizer.Error { return diarError.logDescription }
+            if error is CancellationError { return "diarization cancelled" }
+            let ns = error as NSError
+            return "unexpected error [\(ns.domain) \(ns.code)]"
+        }
+    }
+
+    struct PythonResult {
+        let stdout: Data
+        let stderr: Data
+        let exitCode: Int32
+    }
+
+    /// Internal (not private) so tests can exercise the cancellation path
+    /// directly with a stub executable.
+    static func runPython(
+        path: String,
+        arguments: [String],
+        environment: [String: String]? = nil
+    ) async throws -> PythonResult {
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw Error.pythonNotFound(path)
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = arguments
+        var env = ProcessInfo.processInfo.environment
+        if let extra = environment { env.merge(extra) { _, new in new } }
+        process.environment = env
+
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        // Task cancellation must reach the subprocess. Without this, a
+        // cancelled transcription (user hits Cancel / app shutdown) had no
+        // way to stop a running pyannote pass: `waitUntilExit()` blocked
+        // until the full diarization finished — minutes of CPU on a
+        // recording that may already be deleted, with the serial
+        // transcription queue stalled behind it the whole time.
+        let cancelled = OSAllocatedUnfairLock(initialState: false)
+        return try await withTaskCancellationHandler {
+            try await Task.detached(priority: .userInitiated) {
+                if cancelled.withLock({ $0 }) { throw CancellationError() }
+                try process.run()
+                // Close the narrow window where onCancel ran between the
+                // check above and `run()` — its terminate() hit a not-yet-
+                // launched process and was a no-op.
+                if cancelled.withLock({ $0 }) { process.terminate() }
+
+                // Drain both pipes in detached tasks to avoid deadlock.
+                // macOS pipe buffers are ~64 KB — if the subprocess
+                // fills stderr before we read it, it blocks on write()
+                // while we block on waitUntilExit().
+                let stdoutRead = Task.detached { stdout.fileHandleForReading.readDataToEndOfFile() }
+                let stderrRead = Task.detached { stderr.fileHandleForReading.readDataToEndOfFile() }
+
+                process.waitUntilExit()
+
+                // A SIGTERM'd run surfaces as cancellation, not as a
+                // "diarization failed (exit 15)" error banner. Checked
+                // BEFORE awaiting the drains: the output is discarded
+                // anyway, and `readDataToEndOfFile` only returns at EOF —
+                // which any pipe-inheriting straggler of the killed python
+                // could postpone indefinitely. The abandoned readers exit
+                // on their own when the pipes finally close.
+                if cancelled.withLock({ $0 }) { throw CancellationError() }
+
+                let result = PythonResult(
+                    stdout: await stdoutRead.value,
+                    stderr: await stderrRead.value,
+                    exitCode: process.terminationStatus
+                )
+                // Cancellation that landed while draining still wins.
+                if cancelled.withLock({ $0 }) { throw CancellationError() }
+                return result
+            }.value
+        } onCancel: {
+            cancelled.withLock { $0 = true }
+            if process.isRunning { process.terminate() }
+        }
+    }
+
+    // MARK: - Public API
+
+    static func installDependencies(pythonPath: String) async throws -> String {
+        // `soundfile` is required as an audio backend — pyannote.audio
+        // crashes at import time with IndexError if torchaudio finds no
+        // backend, and `soundfile` is the most reliable one on macOS.
+        let result = try await runPython(
+            path: pythonPath,
+            arguments: ["-m", "pip", "install", "--upgrade",
+                        "pyannote.audio", "torch", "soundfile", "huggingface_hub<1.0"]
+        )
+        let output = String(data: result.stdout, encoding: .utf8) ?? ""
+        guard result.exitCode == 0 else {
+            let errOutput = String(data: result.stderr, encoding: .utf8) ?? ""
+            throw Error.diarizationFailed(errOutput.isEmpty ? output : errOutput)
+        }
+        return output
+    }
+
+    /// Python module name → PyPI package name overrides. Most pyannote
+    /// deps name themselves the same on PyPI as in import statements,
+    /// but a few classic mismatches need translation: pip would fail
+    /// otherwise ("Could not find a version that satisfies the
+    /// requirement PIL"). Extend this list as new mismatches surface.
+    private static let moduleToPackage: [String: String] = [
+        "PIL": "Pillow",
+        "sklearn": "scikit-learn",
+        "yaml": "PyYAML",
+        "cv2": "opencv-python-headless",
+        "bs4": "beautifulsoup4",
+    ]
+
+    /// Targeted remediation when the bundled site-packages is missing a
+    /// transitive pyannote dep (e.g. `torch_audiomentations` was excluded
+    /// by an over-greedy filter in a prior bundle build). Installs the
+    /// named module into the user-writable site-packages so the next
+    /// `import pyannote.audio` succeeds.
+    @discardableResult
+    static func installMissingModule(pythonPath: String,
+                                     userSitePackages: String,
+                                     module: String) async throws -> String {
+        let packageName = moduleToPackage[module] ?? module
+        let result = try await runPython(
+            path: pythonPath,
+            arguments: ["-m", "pip", "install",
+                        "--target", userSitePackages,
+                        "--no-deps", "--only-binary=:all:",
+                        packageName]
+        )
+        let output = String(data: result.stdout, encoding: .utf8) ?? ""
+        guard result.exitCode == 0 else {
+            let errOutput = String(data: result.stderr, encoding: .utf8) ?? ""
+            throw Error.diarizationFailed(errOutput.isEmpty ? output : errOutput)
+        }
+        return output
+    }
+
+    /// Targeted remediation for `code == "missing_audio_backend"`. We don't
+    /// want a generic "install all dependencies" run to fix one missing
+    /// wheel — that'd risk upgrading torch/pyannote unexpectedly. This just
+    /// adds `soundfile` (the pyannote-recommended backend on macOS) and
+    /// leaves everything else alone.
+    ///
+    /// `--force-reinstall --no-cache-dir` is intentional, not paranoid: the
+    /// real-world failure mode here is *not* "soundfile missing", it's
+    /// "soundfile installed but its `_cffi_backend.so` is for the wrong
+    /// architecture" (typically a leftover x86_64 wheel on an arm64 Mac).
+    /// A plain install in that state is a no-op — pip happily reports
+    /// "Requirement already satisfied" — so the next health check would
+    /// still fail. Forcing a reinstall of cffi alongside soundfile is the
+    /// smallest hammer that actually fixes it. Path is gated on the
+    /// missing_audio_backend code, so we only ever take it when audio
+    /// backends are demonstrably empty, never when things are working.
+    @discardableResult
+    static func installAudioBackend(pythonPath: String) async throws -> String {
+        let result = try await runPython(
+            path: pythonPath,
+            arguments: ["-m", "pip", "install", "--user",
+                        "--force-reinstall", "--no-cache-dir",
+                        "cffi", "soundfile"]
+        )
+        let output = String(data: result.stdout, encoding: .utf8) ?? ""
+        guard result.exitCode == 0 else {
+            let errOutput = String(data: result.stderr, encoding: .utf8) ?? ""
+            throw Error.diarizationFailed(errOutput.isEmpty ? output : errOutput)
+        }
+        return output
+    }
+
+    static func diarize(wavURL: URL, pythonPath: String) async throws -> [SpeakerTurn] {
+        guard let modelsPath = bundledModelsPath else {
+            throw Error.diarizationFailed("Bundled diarization models not found in app")
+        }
+        // The pyannote `soundfile`/libsndfile backend can't read AAC/.m4a,
+        // so decode compressed recordings to a temp WAV first. WAV inputs
+        // pass straight through. The temp file is cleaned up on exit.
+        var pythonInputURL = wavURL
+        var tempWAVToCleanUp: URL?
+        if wavURL.pathExtension.lowercased() != "wav" {
+            pythonInputURL = try AudioCompressor.decodeToTempWAV(wavURL)
+            tempWAVToCleanUp = pythonInputURL
+        }
+        defer {
+            if let temp = tempWAVToCleanUp { try? FileManager.default.removeItem(at: temp) }
+        }
+        let resolvedPython = resolvePython(userConfigured: pythonPath)
+        let extraEnv = pythonEnvironment()
+
+        let script = """
+        import json, sys, os, types, tempfile
+
+        try:
+            import speechbrain.utils.importutils as _sbiu
+            _orig_ensure = _sbiu.LazyModule.ensure_module
+            def _safe_ensure(self, *a, **kw):
+                try:
+                    return _orig_ensure(self, *a, **kw)
+                except ImportError:
+                    self.lazy_module = types.ModuleType(self.target)
+                    return self.lazy_module
+            _sbiu.LazyModule.ensure_module = _safe_ensure
+        except Exception:
+            pass
+
+        import torch
+        _orig_torch_load = torch.load
+        def _patched_torch_load(*args, **kwargs):
+            kwargs["weights_only"] = False
+            return _orig_torch_load(*args, **kwargs)
+        torch.load = _patched_torch_load
+
+        from pyannote.audio import Pipeline
+
+        wav_path = sys.argv[1]
+        models_dir = sys.argv[2]
+
+        config_path = os.path.join(models_dir, "config.yaml")
+        with open(config_path) as f:
+            config_text = f.read().replace("__MODELS_DIR__", models_dir)
+
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
+        tmp.write(config_text)
+        tmp.close()
+
+        try:
+            print(f"diarize: loading pipeline from {models_dir}", file=sys.stderr)
+            pipeline = Pipeline.from_pretrained(tmp.name)
+            if torch.backends.mps.is_available():
+                pipeline.to(torch.device("mps"))
+                print(f"diarize: using MPS", file=sys.stderr)
+
+            print(f"diarize: running on {wav_path}", file=sys.stderr)
+            diar = pipeline(wav_path)
+            annotation = getattr(diar, "speaker_diarization", diar)
+
+            turns = []
+            for turn, _, speaker in annotation.itertracks(yield_label=True):
+                turns.append({
+                    "start": round(turn.start, 3),
+                    "end": round(turn.end, 3),
+                    "speaker": speaker,
+                })
+
+            print(f"diarize: found {len(set(t['speaker'] for t in turns))} speakers, {len(turns)} turns", file=sys.stderr)
+            json.dump(turns, sys.stdout)
+        finally:
+            os.unlink(tmp.name)
+        """
+
+        let result = try await runPython(
+            path: resolvedPython,
+            arguments: ["-c", script, pythonInputURL.path, modelsPath],
+            environment: extraEnv
+        )
+        guard result.exitCode == 0 else {
+            let errMsg = String(data: result.stderr, encoding: .utf8) ?? "exit code \(result.exitCode)"
+            throw Error.diarizationFailed(errMsg)
+        }
+        return try JSONDecoder().decode([SpeakerTurn].self, from: result.stdout)
+    }
+
+    /// Embed specific speaker segments from an already-diarized recording.
+    ///
+    /// Unlike `diarize`, this **runs** only the embedding model: the
+    /// `Pipeline.from_pretrained` call still instantiates the whole
+    /// `SpeakerDiarization` pipeline (segmentation model included, that is
+    /// the ~0.4 s), but nothing here segments or clusters — it reaches
+    /// straight for `pipeline._embedding` and pushes known spans through it,
+    /// ~0.04 s per speaker. Skipping the *running* of segmentation and
+    /// clustering is where the 30-60+ minutes go.
+    ///
+    /// `speakerSegments` maps raw speaker IDs to their (start, end) time
+    /// ranges — typically the longest segment per speaker from the
+    /// already-completed transcription.
+    ///
+    /// **These embeddings are noisier than the live daemon's.** A whisper
+    /// segment is not a VAD-trimmed utterance: it can straddle a speaker
+    /// change or open with silence. They land in the same space as the
+    /// stored profiles (same model, same `(1, 1, N)` tensor shape as
+    /// `LiveSpeakerDiarizer.daemonScript`) and are comparable, but callers
+    /// fold them in at `sampleCount: 1` for a reason.
+    ///
+    /// Throws `Error.diarizationFailed` carrying the subprocess's stderr when
+    /// the script fails, rather than returning an empty dictionary — "no
+    /// speaker matched" and "pyannote could not be imported" are not the same
+    /// answer, and the second one needs to reach a log. An empty result now
+    /// means exactly one thing: no span was long enough to embed (or none was
+    /// asked for).
+    static func embedSpeakers(
+        wavURL: URL,
+        pythonPath: String,
+        speakerSegments: [String: (start: Double, end: Double)]
+    ) async throws -> [String: [Float]] {
+        guard let modelsPath = bundledModelsPath else {
+            throw Error.diarizationFailed("Bundled diarization models not found in app")
+        }
+        guard !speakerSegments.isEmpty else { return [:] }
+        var pythonInputURL = wavURL
+        var tempWAVToCleanUp: URL?
+        if wavURL.pathExtension.lowercased() != "wav" {
+            pythonInputURL = try AudioCompressor.decodeToTempWAV(wavURL)
+            tempWAVToCleanUp = pythonInputURL
+        }
+        defer {
+            if let temp = tempWAVToCleanUp { try? FileManager.default.removeItem(at: temp) }
+        }
+        let resolvedPython = resolvePython(userConfigured: pythonPath)
+        let extraEnv = pythonEnvironment()
+
+        // Encode speaker segments as JSON for the Python script.
+        let segmentsJSON = try JSONSerialization.data(
+            withJSONObject: speakerSegments.mapValues { ["start": $0.start, "end": $0.end] },
+            options: [])
+        let segmentsArg = String(data: segmentsJSON, encoding: .utf8) ?? "{}"
+
+        let script = """
+        import json, sys, os, types
+
+        try:
+            import speechbrain.utils.importutils as _sbiu
+            _orig_ensure = _sbiu.LazyModule.ensure_module
+            def _safe_ensure(self, *a, **kw):
+                try:
+                    return _orig_ensure(self, *a, **kw)
+                except ImportError:
+                    self.lazy_module = types.ModuleType(self.target)
+                    return self.lazy_module
+            _sbiu.LazyModule.ensure_module = _safe_ensure
+        except Exception:
+            pass
+
+        import torch
+        _orig_torch_load = torch.load
+        def _patched_torch_load(*args, **kwargs):
+            kwargs["weights_only"] = False
+            return _orig_torch_load(*args, **kwargs)
+        torch.load = _patched_torch_load
+
+        import soundfile as sf
+        import tempfile
+        from pyannote.audio import Pipeline
+
+        wav_path = sys.argv[1]
+        models_dir = sys.argv[2]
+        segments = json.loads(sys.argv[3])
+
+        config_path = os.path.join(models_dir, "config.yaml")
+        with open(config_path) as f:
+            config_text = f.read().replace("__MODELS_DIR__", models_dir)
+
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
+        tmp.write(config_text)
+        tmp.close()
+
+        try:
+            pipeline = Pipeline.from_pretrained(tmp.name)
+            embedder = getattr(pipeline, "_embedding", None)
+            if embedder is None:
+                # Not "nothing matched" — the pipeline shape changed under us
+                # (a pyannote upgrade renaming the attribute is the likely
+                # cause). Fail loudly; a silent {} makes this indistinguishable
+                # from a recording with no usable speech.
+                print("embedSpeakers: pipeline has no _embedding attribute", file=sys.stderr)
+                sys.exit(2)
+
+            # Read each span on its own rather than the whole file: a 3-hour
+            # 16 kHz mono capture is ~690 MB of float32, and this runs right
+            # after every completed transcription, alongside the compression
+            # pass reading the same file.
+            info = sf.info(wav_path)
+            sr = info.samplerate
+            min_samples = int(sr * 0.3)
+
+            embeddings = {}
+            skipped = 0
+            for sp, seg in segments.items():
+                start_sample = max(int(seg["start"] * sr), 0)
+                stop_sample = min(int(seg["end"] * sr), info.frames)
+                if stop_sample - start_sample < min_samples:
+                    skipped += 1
+                    continue
+                chunk, _ = sf.read(wav_path, dtype="float32",
+                                   start=start_sample, stop=stop_sample)
+                if chunk.ndim > 1:
+                    chunk = chunk.mean(axis=1)
+                if len(chunk) < min_samples:
+                    skipped += 1
+                    continue
+                wave = torch.from_numpy(chunk).unsqueeze(0).unsqueeze(0)
+                emb = embedder(wave)
+                if hasattr(emb, 'detach'):
+                    arr = emb.detach().cpu().numpy().flatten()
+                else:
+                    import numpy
+                    arr = numpy.array(emb).flatten()
+                embeddings[sp] = arr.tolist()
+
+            print(f"embedSpeakers: embedded {len(embeddings)} of {len(segments)} speakers ({skipped} spans too short)", file=sys.stderr)
+            json.dump(embeddings, sys.stdout)
+        finally:
+            os.unlink(tmp.name)
+        """
+
+        let result = try await runPython(
+            path: resolvedPython,
+            arguments: ["-c", script, pythonInputURL.path, modelsPath, segmentsArg],
+            environment: extraEnv
+        )
+        // Same contract as `diarize`: a non-zero exit carries the subprocess's
+        // stderr out as an error rather than collapsing into `[:]`. Both new
+        // callers used to `try?` an empty dictionary, so a missing audio file
+        // and a broken pyannote import looked exactly like "nobody matched" —
+        // and a bug report carried nothing usable
+        // (`.claude/rules/python-subprocess.md`).
+        guard result.exitCode == 0 else {
+            let errMsg = String(data: result.stderr, encoding: .utf8) ?? "exit code \(result.exitCode)"
+            throw Error.diarizationFailed(errMsg)
+        }
+        guard !result.stdout.isEmpty else {
+            throw Error.diarizationFailed(String(data: result.stderr, encoding: .utf8) ?? "empty stdout")
+        }
+        do {
+            return try JSONDecoder().decode([String: [Float]].self, from: result.stdout)
+        } catch {
+            throw Error.diarizationFailed("undecodable embedding output; stderr: "
+                                          + (String(data: result.stderr, encoding: .utf8) ?? ""))
+        }
+    }
+
+    struct VerifyResult: Codable {
+        let pyannoteInstalled: Bool
+        let torchInstalled: Bool
+
+        var allGood: Bool {
+            pyannoteInstalled && torchInstalled
+        }
+    }
+
+    /// Outcome of `healthCheck`. `ok == true` means torch + pyannote import,
+    /// the bundled config.yaml parses, AND the pipeline instantiates from
+    /// the bundled weights — i.e. real diarization runs will work without
+    /// any first-call setup penalty surprising the user mid-recording.
+    /// `code` is a stable identifier for recoverable failure modes so the
+    /// Swift side can attempt targeted remediation (e.g. install soundfile
+    /// on missing_audio_backend) instead of free-text matching.
+    /// `module` is set when `code == "missing_module"` — the specific
+    /// import path that failed — so Swift can pip-install it.
+    struct HealthCheckResult: Codable {
+        let ok: Bool
+        let error: String?
+        let code: String?
+        let module: String?
+
+        init(ok: Bool, error: String? = nil, code: String? = nil, module: String? = nil) {
+            self.ok = ok
+            self.error = error
+            self.code = code
+            self.module = module
+        }
+    }
+
+    /// Lightweight diagnostic that runs at app launch (and on demand from
+    /// Settings). Imports the Python stack, loads the bundled config, and
+    /// instantiates `Pipeline.from_pretrained` against the bundled model
+    /// weights, but does NOT process any audio. Typical run time is a
+    /// couple of seconds — fast enough to fire on every launch without
+    /// blocking the UI thread (callers should await it on a background
+    /// task and surface the result async).
+    static func healthCheck(pythonPath: String) async throws -> HealthCheckResult {
+        guard let modelsPath = bundledModelsPath else {
+            return HealthCheckResult(ok: false, error: "Bundled diarization models not found in app")
+        }
+
+        // Same speechbrain LazyModule + torch.load weights_only patches as
+        // `diarize()` — without them pyannote crashes during pipeline init
+        // because the pytorch_lightning stack inspection triggers optional
+        // import paths we don't actually use.
+        //
+        // The torchaudio pre-flight is the one structural addition: pyannote
+        // crashes at *import time* with IndexError if torchaudio reports zero
+        // audio backends (pyannote/audio/core/io.py does `backends[0]`).
+        // Catching this before the pyannote import lets us return a stable
+        // `missing_audio_backend` code that Swift can recover from by
+        // `pip install soundfile`-ing on the user's behalf.
+        let script = """
+        import json, sys, os, types, tempfile
+
+        result = {"ok": False, "error": None, "code": None, "module": None}
+
+        def _emit(code, error):
+            result["code"] = code
+            result["error"] = error
+            json.dump(result, sys.stdout)
+            sys.exit(0)
+
+        try:
+            try:
+                import speechbrain.utils.importutils as _sbiu
+                _orig_ensure = _sbiu.LazyModule.ensure_module
+                def _safe_ensure(self, *a, **kw):
+                    try:
+                        return _orig_ensure(self, *a, **kw)
+                    except ImportError:
+                        self.lazy_module = types.ModuleType(self.target)
+                        return self.lazy_module
+                _sbiu.LazyModule.ensure_module = _safe_ensure
+            except Exception:
+                pass
+
+            try:
+                import torch
+            except ImportError as e:
+                _emit("missing_torch", f"torch not installed: {e}")
+
+            try:
+                import torchaudio
+                backends = torchaudio.list_audio_backends()
+            except ImportError as e:
+                _emit("missing_torchaudio", f"torchaudio not installed: {e}")
+
+            if not backends:
+                _emit("missing_audio_backend",
+                      "torchaudio reports zero audio backends; soundfile needed")
+
+            _orig_torch_load = torch.load
+            def _patched_torch_load(*args, **kwargs):
+                kwargs["weights_only"] = False
+                return _orig_torch_load(*args, **kwargs)
+            torch.load = _patched_torch_load
+
+            try:
+                from pyannote.audio import Pipeline
+            except ImportError as e:
+                # Re-raised below by the outer handler; both top-level
+                # "pyannote not installed" and "transitive dep X missing"
+                # land there with consistent code/module population.
+                raise
+
+            models_dir = sys.argv[1]
+            config_path = os.path.join(models_dir, "config.yaml")
+            with open(config_path) as f:
+                config_text = f.read().replace("__MODELS_DIR__", models_dir)
+
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
+            tmp.write(config_text)
+            tmp.close()
+
+            try:
+                Pipeline.from_pretrained(tmp.name)
+                result["ok"] = True
+            finally:
+                os.unlink(tmp.name)
+        except ModuleNotFoundError as e:
+            # ModuleNotFoundError can surface anywhere — during the
+            # `from pyannote.audio` import OR later inside
+            # Pipeline.from_pretrained when a sub-pipeline lazily imports
+            # something (matplotlib, pandas, sklearn extras). `.name` is
+            # always the offending top-level package. We promote this to a
+            # stable `missing_module` code so Swift can pip-install just
+            # that wheel into the user-writable site-packages and retry.
+            mod = getattr(e, "name", None) or ""
+            if mod and mod != "pyannote" and not mod.startswith("pyannote."):
+                result["module"] = mod
+                result["code"] = "missing_module"
+                result["error"] = f"pyannote dep missing: {mod}"
+            else:
+                result["code"] = "missing_pyannote"
+                result["error"] = f"pyannote.audio not installed: {e}"
+        except Exception as e:
+            msg = f"{type(e).__name__}: {e}"
+            # dlopen refusing to map torch's dylibs is macOS library
+            # validation (hardened runtime), not a broken install: the
+            # interpreter is missing the disable-library-validation
+            # entitlement, so the ad-hoc-signed torch dylibs are rejected
+            # with "different Team IDs" / "code signature ... not valid".
+            # Promote it to a stable code so the Swift side does NOT take
+            # the wipe-and-reinstall path — a reinstall produces the same
+            # ad-hoc signatures and the same refusal.
+            if isinstance(e, OSError) and (
+                "different Team IDs" in msg
+                or "code signature" in msg
+                or "not valid for use in process" in msg
+            ):
+                result["code"] = "codesign_blocked"
+            else:
+                result["code"] = "unknown"
+            result["error"] = msg
+
+        json.dump(result, sys.stdout)
+        """
+
+        let result = try await runPython(
+            path: resolvePython(userConfigured: pythonPath),
+            arguments: ["-c", script, modelsPath],
+            environment: pythonEnvironment()
+        )
+        guard !result.stdout.isEmpty else {
+            let errMsg = String(data: result.stderr, encoding: .utf8) ?? "no output"
+            return HealthCheckResult(ok: false, error: errMsg)
+        }
+        return try JSONDecoder().decode(HealthCheckResult.self, from: result.stdout)
+    }
+
+    static func verifySetup(pythonPath: String) async throws -> VerifyResult {
+        let script = """
+        import json, sys
+
+        result = {
+            "pyannoteInstalled": False,
+            "torchInstalled": False,
+        }
+
+        try:
+            import pyannote.audio
+            result["pyannoteInstalled"] = True
+        except ImportError:
+            pass
+
+        try:
+            import torch
+            result["torchInstalled"] = True
+        except ImportError:
+            pass
+
+        json.dump(result, sys.stdout)
+        """
+
+        let result = try await runPython(
+            path: resolvePython(userConfigured: pythonPath),
+            arguments: ["-c", script],
+            environment: pythonEnvironment()
+        )
+        guard !result.stdout.isEmpty else {
+            let errMsg = String(data: result.stderr, encoding: .utf8) ?? "no output"
+            throw Error.diarizationFailed(errMsg)
+        }
+        return try JSONDecoder().decode(VerifyResult.self, from: result.stdout)
+    }
+
+    static func assignSpeaker(segmentStart: Double, segmentEnd: Double, turns: [SpeakerTurn]) -> String? {
+        guard !turns.isEmpty else { return nil }
+        let mid = (segmentStart + segmentEnd) / 2.0
+        var best: String?
+        var bestOverlap: Double = 0.0
+        for turn in turns {
+            let overlap = max(0.0, min(segmentEnd, turn.end) - max(segmentStart, turn.start))
+            if overlap > bestOverlap {
+                bestOverlap = overlap
+                best = turn.speaker
+            }
+            if best == nil && turn.start <= mid && mid <= turn.end {
+                best = turn.speaker
+            }
+        }
+        return best
+    }
+}
