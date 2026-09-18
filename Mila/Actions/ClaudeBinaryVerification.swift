@@ -1,6 +1,9 @@
+// Modified by NX1X for OpenMila; see CHANGES.md.
 import Foundation
 import CryptoKit
+#if canImport(Security)
 import Security
+#endif
 import os
 
 private let verifyLog = os.Logger(subsystem: "io.island.whisper.IslandWhisper",
@@ -191,6 +194,7 @@ enum ClaudeBinaryVerification {
     }
 }
 
+#if canImport(Security)
 /// The real signature check, via the Security framework rather than a
 /// `codesign` subprocess.
 ///
@@ -250,3 +254,4 @@ struct SecurityFrameworkSignatureVerifier: ClaudeSignatureVerifying {
         return "Security framework status \(status)."
     }
 }
+#endif
