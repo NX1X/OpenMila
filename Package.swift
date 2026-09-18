@@ -59,6 +59,28 @@ let package = Package(
             path: "Port/Shims/CryptoKit"
         ),
 
+        // MARK: Platform seam and audio
+        .target(name: "PlatformKit", path: "Port/PlatformKit"),
+        .target(
+            name: "CMiniaudio",
+            path: "Port/CMiniaudio",
+            cSettings: [.define("MA_NO_RUNTIME_LINKING", .when(platforms: [.windows]))],
+            linkerSettings: [
+                .linkedLibrary("dl", .when(platforms: [.linux])),
+                .linkedLibrary("m", .when(platforms: [.linux])),
+                .linkedLibrary("pthread", .when(platforms: [.linux])),
+            ]
+        ),
+        .target(name: "AudioCapture", dependencies: ["CMiniaudio", "PlatformKit"], path: "Port/AudioCapture"),
+        .executableTarget(
+            name: "openmila-cli",
+            dependencies: [
+                "AudioCapture", "PlatformKit",
+                .product(name: "TranscriptionCore", package: "TranscriptionCore"),
+            ],
+            path: "Port/CLI"
+        ),
+
         // MARK: Upstream core, consumed in place
         //
         // Everything under Mila/ that is not tied to an Apple UI or capture
@@ -78,6 +100,7 @@ let package = Package(
             exclude: [
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
+                "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
@@ -114,6 +137,7 @@ let package = Package(
             path: ".",
             exclude: [
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
+                "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",
