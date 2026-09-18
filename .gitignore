@@ -42,3 +42,8 @@ llm-artifacts/
 # --- OpenMila port ---
 # Internal plans and working notes; never published.
 docs-internal/
+# Claude Code files: local only, never published.
+CLAUDE.md
+CLAUDE.local.md
+**/CLAUDE.md
+.claude/
