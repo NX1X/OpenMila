@@ -44,7 +44,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: steps.changes.outputs.relevant == 'true'
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Run E2E (English, mock backend — no key)
         if: steps.changes.outputs.relevant == 'true'
         run: |
@@ -74,7 +74,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: steps.changes.outputs.relevant == 'true'
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Run E2E (Hebrew, mock backend — no key)
         if: steps.changes.outputs.relevant == 'true'
         run: |
@@ -178,7 +178,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: steps.changes.outputs.relevant == 'true'
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - run: pip install --upgrade anthropic
         if: steps.changes.outputs.relevant == 'true'
       - name: Visual regression check via Claude vision
