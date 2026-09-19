@@ -100,6 +100,11 @@ stage_core() {
   [ "$unexpected" -eq 0 ]
 }
 
+stage_port() {
+  log "port modules: recording session, Linux platform services"
+  retry swift test "${FLAGS[@]}" --filter '^(RecordingTests|LinuxPlatformTests)\.'
+}
+
 stage_cli() {
   log "openmila-cli builds"
   retry swift build --product openmila-cli "${FLAGS[@]}"
@@ -120,9 +125,10 @@ case "${1:-all}" in
   packages) stage_whisper; stage_packages ;;
   shims) stage_whisper; stage_shims ;;
   core) stage_whisper; stage_core ;;
+  port) stage_whisper; stage_port ;;
   cli) stage_whisper; stage_cli ;;
   e2e) stage_whisper; stage_e2e ;;
-  all) stage_whisper; stage_packages; stage_shims; stage_core; stage_cli; stage_e2e ;;
-  *) echo "usage: ci/run.sh all|whisper|packages|shims|core|cli|e2e" >&2; exit 2 ;;
+  all) stage_whisper; stage_packages; stage_shims; stage_core; stage_port; stage_cli; stage_e2e ;;
+  *) echo "usage: ci/run.sh all|whisper|packages|shims|core|port|cli|e2e" >&2; exit 2 ;;
 esac
 log "done: ${1:-all}"

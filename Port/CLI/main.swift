@@ -8,7 +8,10 @@
 
 import AudioCapture
 import Foundation
+import LinuxPlatform
 import OpenMilaLogging
+import Recording
+import Updater
 import PlatformKit
 import TranscriptionCore
 
@@ -102,6 +105,80 @@ case "logs":
         print("(no log file yet)")
     }
 
+case "notify":
+    LinuxNotifier().notify(title: "OpenMila", body: args.dropFirst().joined(separator: " ").isEmpty ? "Notification test" : args.dropFirst().joined(separator: " "))
+    print("sent")
+
+case "inject":
+    let text = args.dropFirst().joined(separator: " ")
+    let outcome = await LinuxTextInjector(notifier: LinuxNotifier()).inject(text.isEmpty ? "OpenMila dictation test" : text)
+    print("outcome: \(outcome)")
+
+case "inhibit":
+    let seconds = Double(option("--seconds", in: args) ?? "5") ?? 5
+    let inhibitor = LinuxSleepInhibitor()
+    inhibitor.acquire(reason: "OpenMila CLI test")
+    print("sleep inhibited for \(seconds)s (check: systemd-inhibit --list)")
+    try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    inhibitor.release()
+    print("released")
+
+case "hotkey":
+    guard X11Hotkeys.isAvailable, let hotkeys = try? X11Hotkeys() else { fail("no X11 display for hotkeys") }
+    let chord = HotkeyChord(key: option("--key", in: args) ?? "2", modifiers: [.control, .alt])
+    let result = await hotkeys.register(id: "test", chord: chord) { print("pressed \(chord.displayName)") }
+    print("register \(chord.displayName): \(result). Waiting 15s for presses...")
+    try? await Task.sleep(nanoseconds: 15_000_000_000)
+    await hotkeys.unregister(id: "test")
+
+case "meetings":
+    let found = await LinuxMeetingSignals().activeMeetings()
+    print(found.isEmpty ? "no meeting apps running" : found.map(\.appName).joined(separator: ", "))
+
+case "update-check":
+    let repo = option("--repo", in: args) ?? LinuxPlatform.repository
+    let updater = GitHubReleasesUpdater(repository: repo, currentVersion: option("--current", in: args) ?? "0.0.0")
+    do {
+        if let update = try await updater.check(includePrereleases: args.contains("--beta")) {
+            print("update available: \(update.version) prerelease=\(update.isPrerelease) \(update.downloadPage)")
+        } else { print("up to date") }
+    } catch { fail("update check failed: \(error)") }
+
+case "session":
+    // Records through the port's RecordingSession (mic, or --system for the
+    // whole-system monitor) and writes a WAV.
+    let seconds = Double(option("--seconds", in: args) ?? "5") ?? 5
+    let out = option("--out", in: args) ?? "openmila-session.wav"
+    let system = MiniaudioSystemLoopback()
+    let session = await RecordingSession(microphone: microphone, appAudio: system)
+    do {
+        let target = try system.targets().first
+        let source: RecordingSource = args.contains("--system") ? .systemAudio : (args.contains("--meeting") ? .meeting : .microphone)
+        try await session.start(source: source, outputURL: URL(fileURLWithPath: out), appTarget: target)
+        print("session recording \(source) for \(seconds)s -> \(out)")
+        try? await Task.sleep(nanoseconds: UInt64(seconds / 2 * 1_000_000_000))
+        await session.pause(); print("paused 1s"); try? await Task.sleep(nanoseconds: 1_000_000_000); await session.resume()
+        try? await Task.sleep(nanoseconds: UInt64(seconds / 2 * 1_000_000_000))
+        let url = await session.stop()
+        let frames = await session.lastMicFrameCount
+        print("stopped: \(url?.path ?? "-") micFrames=\(frames) elapsed excludes the pause")
+        if let model = option("--model", in: args), let url {
+            await transcribe(try WAVReader.loadSamples(url: url), language: option("--lang", in: args) ?? "en", modelPath: model)
+        }
+    } catch { fail("\(error.localizedDescription)") }
+
+case "play":
+    guard args.count >= 2 else { fail("usage: openmila-cli play <file.wav> [--rate 1.5] [--seek 2.0]") }
+    do {
+        let player = try MiniaudioPlayer(url: URL(fileURLWithPath: args[1]))
+        if let rate = option("--rate", in: args).flatMap(Double.init) { player.setRate(rate) }
+        if let seek = option("--seek", in: args).flatMap(Double.init) { player.seek(to: seek) }
+        print("playing \(String(format: "%.1f", player.duration))s")
+        player.play()
+        while player.isPlaying { try? await Task.sleep(nanoseconds: 100_000_000) }
+        print("finished at \(String(format: "%.1f", player.position))s")
+    } catch { fail(error.localizedDescription) }
+
 case "transcribe":
     guard args.count >= 2, let model = option("--model", in: args) else {
         fail("usage: openmila-cli transcribe <file.wav> --model <path> [--lang en]")
@@ -112,5 +189,5 @@ case "transcribe":
     } catch { fail("\(error.localizedDescription)") }
 
 default:
-    print("usage: openmila-cli devices | logs | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
+    print("usage: openmila-cli devices | logs | play | notify | inject | inhibit | hotkey | meetings | update-check | session | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
 }

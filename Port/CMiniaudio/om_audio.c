@@ -1,7 +1,6 @@
 // Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
 
 // Capture only: no decoding, encoding, playback engine or resource manager.
-#define MA_NO_DECODING
 #define MA_NO_ENCODING
 #define MA_NO_GENERATION
 #define MA_NO_ENGINE
@@ -153,4 +152,113 @@ const char *om_capture_backend_name(const om_capture *capture) {
 
 const char *om_result_description(int32_t result) {
     return ma_result_description((ma_result)result);
+}
+
+// ---- Playback -------------------------------------------------------------
+
+struct om_player {
+    ma_decoder decoder;
+    ma_device device;
+    ma_resampler resampler;
+    int decoder_ready, device_ready, resampler_ready;
+    double rate;
+    ma_uint32 sample_rate;
+    ma_uint32 channels;
+    ma_uint64 length_frames;
+    ma_uint64 cursor_frames;
+    int playing;
+};
+
+static void om_player_callback(ma_device *device, void *output, const void *input, ma_uint32 frames) {
+    (void)input;
+    om_player *p = (om_player *)device->pUserData;
+    float *out = (float *)output;
+    memset(out, 0, (size_t)frames * p->channels * sizeof(float));
+    if (!p->playing) return;
+
+    if (p->rate == 1.0) {
+        ma_uint64 read = 0;
+        ma_decoder_read_pcm_frames(&p->decoder, out, frames, &read);
+        p->cursor_frames += read;
+        if (read < frames) p->playing = 0;
+        return;
+    }
+    // Pull ceil(frames * rate) source frames and resample to the requested
+    // output count.
+    ma_uint64 need = (ma_uint64)(frames * p->rate) + 2;
+    float *tmp = (float *)malloc((size_t)need * p->channels * sizeof(float));
+    if (tmp == NULL) return;
+    ma_uint64 read = 0;
+    ma_decoder_read_pcm_frames(&p->decoder, tmp, need, &read);
+    p->cursor_frames += read;
+    ma_uint64 in_frames = read, out_frames = frames;
+    ma_resampler_process_pcm_frames(&p->resampler, tmp, &in_frames, out, &out_frames);
+    free(tmp);
+    if (read < need) p->playing = 0;
+}
+
+om_player *om_player_open(const char *path, int32_t *error) {
+    if (error) *error = MA_SUCCESS;
+    om_player *p = (om_player *)calloc(1, sizeof(om_player));
+    if (p == NULL) { if (error) *error = MA_OUT_OF_MEMORY; return NULL; }
+    p->rate = 1.0;
+
+    ma_decoder_config dc = ma_decoder_config_init(ma_format_f32, 0, 0);
+    ma_result r = ma_decoder_init_file(path, &dc, &p->decoder);
+    if (r != MA_SUCCESS) goto fail;
+    p->decoder_ready = 1;
+    p->sample_rate = p->decoder.outputSampleRate;
+    p->channels = p->decoder.outputChannels;
+    ma_decoder_get_length_in_pcm_frames(&p->decoder, &p->length_frames);
+
+    ma_resampler_config rc = ma_resampler_config_init(ma_format_f32, p->channels, p->sample_rate, p->sample_rate, ma_resample_algorithm_linear);
+    r = ma_resampler_init(&rc, NULL, &p->resampler);
+    if (r != MA_SUCCESS) goto fail;
+    p->resampler_ready = 1;
+
+    ma_device_config config = ma_device_config_init(ma_device_type_playback);
+    config.playback.format = ma_format_f32;
+    config.playback.channels = p->channels;
+    config.sampleRate = p->sample_rate;
+    config.dataCallback = om_player_callback;
+    config.pUserData = p;
+    r = ma_device_init(NULL, &config, &p->device);
+    if (r != MA_SUCCESS) goto fail;
+    p->device_ready = 1;
+    r = ma_device_start(&p->device);
+    if (r != MA_SUCCESS) goto fail;
+    return p;
+fail:
+    if (error) *error = (int32_t)r;
+    om_player_close(p);
+    return NULL;
+}
+
+void om_player_close(om_player *p) {
+    if (p == NULL) return;
+    if (p->device_ready) ma_device_uninit(&p->device);
+    if (p->resampler_ready) ma_resampler_uninit(&p->resampler, NULL);
+    if (p->decoder_ready) ma_decoder_uninit(&p->decoder);
+    free(p);
+}
+
+int32_t om_player_play(om_player *p) { if (!p) return MA_INVALID_ARGS; p->playing = 1; return MA_SUCCESS; }
+int32_t om_player_pause(om_player *p) { if (!p) return MA_INVALID_ARGS; p->playing = 0; return MA_SUCCESS; }
+int32_t om_player_is_playing(const om_player *p) { return p ? p->playing : 0; }
+double om_player_position(om_player *p) { return p ? (double)p->cursor_frames / p->sample_rate : 0; }
+double om_player_length(om_player *p) { return p ? (double)p->length_frames / p->sample_rate : 0; }
+
+int32_t om_player_seek(om_player *p, double seconds) {
+    if (!p) return MA_INVALID_ARGS;
+    ma_uint64 frame = (ma_uint64)(seconds * p->sample_rate);
+    if (frame > p->length_frames) frame = p->length_frames;
+    ma_result r = ma_decoder_seek_to_pcm_frame(&p->decoder, frame);
+    if (r == MA_SUCCESS) p->cursor_frames = frame;
+    return (int32_t)r;
+}
+
+int32_t om_player_set_rate(om_player *p, double rate) {
+    if (!p || rate < 0.5 || rate > 2.0) return MA_INVALID_ARGS;
+    p->rate = rate;
+    return (int32_t)ma_resampler_set_rate(&p->resampler, (ma_uint32)(p->sample_rate * rate), p->sample_rate);
 }

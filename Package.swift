@@ -80,6 +80,18 @@ let package = Package(
         ),
         .target(name: "AudioCapture", dependencies: ["CMiniaudio", "PlatformKit"], path: "Port/AudioCapture"),
         .target(name: "Recording", dependencies: ["PlatformKit"], path: "Port/Recording"),
+        .target(name: "Updater", dependencies: ["PlatformKit"], path: "Port/Updater"),
+        .systemLibrary(name: "CX11", path: "Port/CX11", pkgConfig: "x11", providers: [.apt(["libx11-dev"])]),
+        .target(
+            name: "LinuxPlatform",
+            dependencies: ["PlatformKit", "AudioCapture", "Updater", "CX11"],
+            path: "Port/LinuxPlatform"
+        ),
+        .testTarget(
+            name: "LinuxPlatformTests",
+            dependencies: ["LinuxPlatform", "Updater", "PlatformKit"],
+            path: "Port/Tests/LinuxPlatformTests"
+        ),
         .testTarget(
             name: "RecordingTests",
             dependencies: ["Recording", "PlatformKit", .product(name: "TranscriptionCore", package: "TranscriptionCore")],
@@ -88,7 +100,8 @@ let package = Package(
         .executableTarget(
             name: "openmila-cli",
             dependencies: [
-                "AudioCapture", "PlatformKit", "OpenMilaLogging",
+                "AudioCapture", "PlatformKit", "OpenMilaLogging", "Recording", "Updater",
+                .target(name: "LinuxPlatform", condition: .when(platforms: [.linux])),
                 .product(name: "TranscriptionCore", package: "TranscriptionCore"),
             ],
             path: "Port/CLI"
@@ -114,7 +127,7 @@ let package = Package(
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
@@ -152,7 +165,7 @@ let package = Package(
             exclude: [
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",

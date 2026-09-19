@@ -54,3 +54,22 @@ const char *om_result_description(int32_t result);
 #endif
 
 #endif
+
+// ---- Playback -------------------------------------------------------------
+
+typedef struct om_player om_player;
+
+// Opens a WAV/FLAC/MP3 file for playback on the default output device.
+// Returns NULL and writes the result code to *error on failure.
+om_player *om_player_open(const char *path, int32_t *error);
+void om_player_close(om_player *player);
+int32_t om_player_play(om_player *player);
+int32_t om_player_pause(om_player *player);
+int32_t om_player_is_playing(const om_player *player);
+// Position and length in seconds.
+double om_player_position(om_player *player);
+double om_player_length(om_player *player);
+int32_t om_player_seek(om_player *player, double seconds);
+// Playback rate, 0.5 to 2.0. Changes tempo by resampling; a pitch-preserving
+// stretch is layered on top of this in Swift when available.
+int32_t om_player_set_rate(om_player *player, double rate);
