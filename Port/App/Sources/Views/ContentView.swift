@@ -31,11 +31,15 @@ struct ContentView: View {
     @State var section: SidebarSection? = .home
     @State var selectedRecording: UUID?
     @State var showSettings = false
+    @State var importer: Observed<MilaConfigImporter>
+    @State var whatsNew: WhatsNewUpdate?
+    @State var showWhatsNew = false
 
     init(model: AppModel) {
         self.model = model
         _store = State(wrappedValue: Observed(model.store))
         _transcription = State(wrappedValue: Observed(model.transcription))
+        _importer = State(wrappedValue: Observed(model.configImporter))
     }
 
     var visibleRecordings: [Recording] {
@@ -71,6 +75,71 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView(model: model, isPresented: $showSettings)
         }
+        .sheet(isPresented: Binding(get: { importer.object.pending != nil }, set: { if !$0 { model.configImporter.cancel() } })) {
+            MilaConfigConfirmationView(importer: importer)
+        }
+        .sheet(isPresented: $showWhatsNew) {
+            WhatsNewPopup(update: whatsNew, onUpdate: {
+                if let v = whatsNew?.displayVersion { model.whatsNewGate.markSeen(version: v) }
+                showWhatsNew = false
+            }, onLater: {
+                if let v = whatsNew?.displayVersion { model.whatsNewGate.markSeen(version: v) }
+                showWhatsNew = false
+            })
+        }
+        .task {
+            if let update = await model.checkForWhatsNew() {
+                whatsNew = update
+                showWhatsNew = true
+            }
+        }
+    }
+}
+
+/// Port of `Mila/Views/MilaConfigConfirmationView.swift`.
+struct MilaConfigConfirmationView: View {
+    let importer: Observed<MilaConfigImporter>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let pending = importer.object.pending {
+                Text("Apply \(pending.sourceName)?").font(.title3)
+                Text("These settings will change. Anything not listed stays as it is.").font(.caption).foregroundColor(Theme.secondaryText)
+                ForEach(pending.changes) { change in
+                    HStack { Text(change.label).font(.callout); Spacer(); Text(change.value).font(.callout).foregroundColor(Theme.secondaryText) }
+                }
+                HStack {
+                    Button("Cancel") { importer.object.cancel() }
+                    Button("Apply") { importer.object.confirm() }
+                }
+            }
+            if let error = importer.object.errorMessage { Text(error).foregroundColor(Theme.danger).font(.callout) }
+        }.padding().frame(minWidth: 460)
+    }
+}
+
+/// Port of `Mila/Views/WhatsNewPopup.swift`: highlights of the newer version
+/// found by the scheduled check, with Update (opens the release page) or Later.
+struct WhatsNewPopup: View {
+    let update: WhatsNewUpdate?
+    let onUpdate: () -> Void
+    let onLater: () -> Void
+    @Environment(\.openURL) var openURL
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("What's New in \(AppIdentity.name) \(update?.displayVersion ?? "")").font(.title3)
+            ForEach(update?.highlights ?? [], id: \.self) { line in
+                Text("- \(line)").font(.callout)
+            }
+            HStack {
+                Button("Later") { onLater() }
+                Button("Open release page") {
+                    if let url = URL(string: "https://github.com/\(AppIdentity.repository)/releases/latest") { openURL(url) }
+                    onUpdate()
+                }
+            }
+        }.padding().frame(minWidth: 480)
     }
 }
 

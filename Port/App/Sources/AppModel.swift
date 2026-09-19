@@ -43,6 +43,9 @@ final class AppModel {
     let watchedFolders: VoiceMemosSettings
     let dictation: DictationController
     let hotkeys: HotkeySettings
+    let liveAISettings: LiveAISettings
+    let configImporter: MilaConfigImporter
+    let whatsNewGate = WhatsNewGate()
 
     init() {
         OpenMilaLog.install(processName: AppIdentity.name, version: AppIdentity.version)
@@ -73,6 +76,14 @@ final class AppModel {
                                         notifier: platform.notifier, store: store, transcription: transcription,
                                         liveTranscriber: liveTranscriber, audioInput: audioInput)
         hotkeys = HotkeySettings(hotkeys: platform.hotkeys)
+        liveAISettings = LiveAISettings()
+        configImporter = MilaConfigImporter(remote: remoteSettings, language: languageSettings,
+                                            liveAI: liveAISettings, diarization: diarizationSettings,
+                                            meetingDetection: meetingDetection)
+        // `openmila file.milaconfig`: the file association hands the path in argv.
+        if let path = CommandLine.arguments.dropFirst().first(where: { $0.hasSuffix(".milaconfig") }) {
+            configImporter.handleOpen(URL(fileURLWithPath: path))
+        }
         Task { [dictation, hotkeys] in
             await hotkeys.activate { language in Task { await dictation.toggle(language) } }
         }
@@ -80,6 +91,15 @@ final class AppModel {
         session.onLiveSamples = { [liveTranscriber] samples in
             liveTranscriber.ingest(samples[samples.startIndex..<samples.endIndex])
         }
+    }
+
+    /// Upstream: the scheduled Sparkle poll feeding `WhatsNewPopup`.
+    func checkForWhatsNew() async -> WhatsNewUpdate? {
+        guard let updater = platform.updater else { return nil }
+        let beta = UserDefaults.standard.bool(forKey: "updates.betaChannel")
+        guard let update = try? await updater.check(includePrereleases: beta),
+              whatsNewGate.shouldShow(availableVersion: update.version) else { return nil }
+        return WhatsNewUpdate(displayVersion: update.version, releaseNotesHTML: update.releaseNotesMarkdown)
     }
 
     // MARK: Recording flow (upstream: QuickActionsController.startRecording / stopRecording)

@@ -29,6 +29,8 @@ struct SettingsView: View {
     @State var chordEN = ""
     @State var chordHE = ""
     @State var chordNotice = ""
+    @State var diagnosticsNotice = ""
+    @Environment(\.chooseFile) var chooseFile
     @State var betaUpdates = UserDefaults.standard.bool(forKey: "updates.betaChannel")
     @State var updateStatus = ""
     @State var devices: [AudioInputDevice] = []
@@ -170,6 +172,25 @@ struct SettingsView: View {
                  : "Global shortcuts work on X11 sessions (and XWayland windows). On pure Wayland, use the Dictate buttons on Home.")
                 .font(.caption).foregroundColor(Theme.secondaryText)
             Divider()
+            Text("Team setup").font(.headline)
+            Button("Import a .milaconfig file...") {
+                Task {
+                    if let url = await chooseFile(title: "Open a Mila configuration") {
+                        model.configImporter.handleOpen(url)
+                        isPresented = false
+                    }
+                }
+            }
+            Divider()
+            Text("Diagnostics").font(.headline)
+            Button("Export diagnostic report") {
+                Task {
+                    do { diagnosticsNotice = "Saved \((try await Diagnostics.buildReport(model: model)).path)" }
+                    catch { diagnosticsNotice = error.localizedDescription }
+                }
+            }
+            Text(diagnosticsNotice.isEmpty ? "Settings with credentials redacted, recording shapes without titles, and the log files." : diagnosticsNotice)
+                .font(.caption).foregroundColor(Theme.secondaryText)
             Text("Logs: \(model.platform.paths.logDirectory.path)").font(.caption)
         }
     }
