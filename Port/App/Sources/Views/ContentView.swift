@@ -78,6 +78,10 @@ struct SidebarView: View {
     let store: Observed<RecordingStore>
     @Binding var section: SidebarSection?
     @Binding var showSettings: Bool
+    @State var showFolderSheet = false
+    @State var folderDraft = ""
+    @State var renamingFolder: String?
+    @State var trashNotice = ""
 
     var sections: [SidebarSection] {
         [.home, .all] + store.object.folders.map { .folder($0) } + [.dictations, .trash]
@@ -90,12 +94,43 @@ struct SidebarView: View {
                 Text(item.title).font(.callout)
             }
             Spacer()
+            Menu("Folders") {
+                Button("New folder...") { renamingFolder = nil; folderDraft = ""; showFolderSheet = true }
+                if case .folder(let name) = section {
+                    Button("Rename \"\(name)\"...") { renamingFolder = name; folderDraft = name; showFolderSheet = true }
+                    Button("Delete \"\(name)\"") { store.object.deleteFolder(name); section = .all }
+                }
+                if section == .trash {
+                    Button("Empty Trash") {
+                        let n = store.object.emptyTrash()
+                        trashNotice = "Deleted \(n) recording\(n == 1 ? "" : "s")."
+                    }
+                }
+            }.padding([.leading, .trailing])
+            if !trashNotice.isEmpty { Text(trashNotice).font(.caption).padding([.leading, .trailing]) }
             Divider()
             HStack {
                 Button("Settings") { showSettings = true }
                 Spacer()
                 Text(AppIdentity.version).font(.caption2).foregroundColor(Theme.secondaryText)
             }.padding()
+        }
+        .sheet(isPresented: $showFolderSheet) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(renamingFolder == nil ? "New folder" : "Rename folder").font(.title3)
+                TextField("Folder name", text: $folderDraft)
+                HStack {
+                    Button("Cancel") { showFolderSheet = false }
+                    Button("Save") {
+                        if let old = renamingFolder {
+                            if let renamed = store.object.renameFolder(old, to: folderDraft) { section = .folder(renamed) }
+                        } else if let created = store.object.createFolder(folderDraft) {
+                            section = .folder(created)
+                        }
+                        showFolderSheet = false
+                    }
+                }
+            }.padding().frame(minWidth: 380)
         }
     }
 }
