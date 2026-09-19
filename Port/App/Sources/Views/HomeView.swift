@@ -4,6 +4,7 @@
 // `QuickActionsController`: source, language, record / pause / stop, live
 // transcript.
 
+import Dictation
 import Foundation
 import PlatformKit
 import Recording
@@ -15,6 +16,7 @@ struct HomeView: View {
     let transcription: Observed<TranscriptionService>
     @State var live: Observed<LiveTranscriber>
     @State var language: Observed<RecordingLanguageSettings>
+    @State var dictation: Observed<DictationController>
     @State var tick = 0
     @State var sourceName: String? = "Microphone"
     @State var targetName: String? = nil
@@ -25,6 +27,7 @@ struct HomeView: View {
         self.transcription = transcription
         _live = State(wrappedValue: Observed(model.liveTranscriber))
         _language = State(wrappedValue: Observed(model.languageSettings))
+        _dictation = State(wrappedValue: Observed(model.dictation))
     }
 
     var targets: [AudioCaptureTarget] { (try? model.platform.appAudio?.targets()) ?? [] }
@@ -80,6 +83,15 @@ struct HomeView: View {
                 }
             }
             if let error { Text(error).foregroundColor(Theme.danger).font(.callout) }
+            Divider()
+            HStack(spacing: 12) {
+                Text("Dictate").font(.headline)
+                ForEach(DictationLanguage.allCases, id: \.self) { lang in
+                    Button(dictationLabel(lang)) { Task { await model.dictation.toggle(lang) } }
+                }
+                Text(dictationStatus).font(.caption).foregroundColor(Theme.secondaryText)
+            }
+            if let outcome = dictation.object.lastOutcome { Text(outcome).font(.caption) }
             if let error = transcription.object.lastError {
                 Text(error).foregroundColor(Theme.danger).font(.callout)
             }
@@ -110,6 +122,22 @@ struct HomeView: View {
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 if isRecording { tick += 1 }
             }
+        }
+    }
+
+    func dictationLabel(_ lang: DictationLanguage) -> String {
+        let chord = model.hotkeys.chord(for: lang).displayName
+        switch dictation.object.state {
+        case .recording(let active) where active == lang: return "Stop (\(chord))"
+        default: return "\(lang == .english ? "EN" : "HE") (\(chord))"
+        }
+    }
+
+    var dictationStatus: String {
+        switch dictation.object.state {
+        case .idle: return model.hotkeys.isAvailable ? "Press the hotkey anywhere, or click." : "Hotkeys need an X11 session; click to dictate."
+        case .recording: return "Listening... press again to stop and paste."
+        case .transcribing: return "Transcribing..."
         }
     }
 

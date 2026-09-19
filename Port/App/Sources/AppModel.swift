@@ -5,6 +5,7 @@
 // platform services. Everything is `@MainActor`, as upstream's are.
 
 import AudioCapture
+import Dictation
 import Foundation
 import LinuxPlatform
 import OpenMilaLogging
@@ -40,6 +41,8 @@ final class AppModel {
     let speakerProfiles: SpeakerProfileStore
     let meetingDetection: MeetingDetectionSettings
     let watchedFolders: VoiceMemosSettings
+    let dictation: DictationController
+    let hotkeys: HotkeySettings
 
     init() {
         OpenMilaLog.install(processName: AppIdentity.name, version: AppIdentity.version)
@@ -66,6 +69,13 @@ final class AppModel {
         speakerProfiles = SpeakerProfileStore(directory: platform.paths.dataDirectory, settings: voiceRecognition)
         meetingDetection = MeetingDetectionSettings()
         watchedFolders = VoiceMemosSettings()
+        dictation = DictationController(microphone: platform.microphone, injector: platform.textInjector,
+                                        notifier: platform.notifier, store: store, transcription: transcription,
+                                        liveTranscriber: liveTranscriber, audioInput: audioInput)
+        hotkeys = HotkeySettings(hotkeys: platform.hotkeys)
+        Task { [dictation, hotkeys] in
+            await hotkeys.activate { language in Task { await dictation.toggle(language) } }
+        }
 
         session.onLiveSamples = { [liveTranscriber] samples in
             liveTranscriber.ingest(samples[samples.startIndex..<samples.endIndex])

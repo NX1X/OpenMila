@@ -3,6 +3,7 @@
 // Port of `Mila/Views/SettingsView.swift`: a section sidebar with the same
 // sections in the same order. Voice Memos becomes Watched Folders.
 
+import Dictation
 import Foundation
 import PlatformKit
 import SwiftCrossUI
@@ -24,6 +25,10 @@ struct SettingsView: View {
     @State var meetings: Observed<MeetingDetectionSettings>
     @State var watched: Observed<VoiceMemosSettings>
     @State var watchedPath = ""
+    @State var hotkeys: Observed<HotkeySettings>
+    @State var chordEN = ""
+    @State var chordHE = ""
+    @State var chordNotice = ""
     @State var betaUpdates = UserDefaults.standard.bool(forKey: "updates.betaChannel")
     @State var updateStatus = ""
     @State var devices: [AudioInputDevice] = []
@@ -46,6 +51,7 @@ struct SettingsView: View {
         _voice = State(wrappedValue: Observed(model.voiceRecognition))
         _meetings = State(wrappedValue: Observed(model.meetingDetection))
         _watched = State(wrappedValue: Observed(model.watchedFolders))
+        _hotkeys = State(wrappedValue: Observed(model.hotkeys))
     }
 
     var body: some View {
@@ -80,6 +86,8 @@ struct SettingsView: View {
             if let id = model.audioInput.preferredUID, let d = devices.first(where: { $0.id == id }) { deviceName = d.name }
             storageGB = model.storageSettings.limitGigabytes
             watchedPath = model.watchedFolders.grantedFolderURL?.path ?? ""
+            chordEN = model.hotkeys.chord(for: .english).displayName
+            chordHE = model.hotkeys.chord(for: .hebrew).displayName
         }
     }
 
@@ -154,10 +162,23 @@ struct SettingsView: View {
             }
             Divider()
             Text("Dictation hotkeys").font(.headline)
-            Text("Global shortcuts need an X11 session or a desktop that supports the GlobalShortcuts portal. Configuration arrives with the dictation port.")
+            HStack { Text("English").font(.callout); TextField("Ctrl+Alt+2", text: $chordEN); Button("Apply") { apply(.english, chordEN) } }
+            HStack { Text("Hebrew").font(.callout); TextField("Ctrl+Alt+3", text: $chordHE); Button("Apply") { apply(.hebrew, chordHE) } }
+            Button("Reset to defaults") { Task { await model.hotkeys.resetToDefault(.english); await model.hotkeys.resetToDefault(.hebrew); chordEN = model.hotkeys.chord(for: .english).displayName; chordHE = model.hotkeys.chord(for: .hebrew).displayName } }
+            Text(hotkeys.object.isAvailable
+                 ? "Write modifiers and a key: Ctrl, Alt, Shift, Super and a letter, digit, F-key, Space, Return, Escape or Tab. \(chordNotice)"
+                 : "Global shortcuts work on X11 sessions (and XWayland windows). On pure Wayland, use the Dictate buttons on Home.")
                 .font(.caption).foregroundColor(Theme.secondaryText)
             Divider()
             Text("Logs: \(model.platform.paths.logDirectory.path)").font(.caption)
+        }
+    }
+
+    func apply(_ language: DictationLanguage, _ text: String) {
+        guard let chord = HotkeyChord.parse(text) else { chordNotice = "Could not read that combination."; return }
+        Task {
+            let ok = await model.hotkeys.setChord(chord, for: language)
+            chordNotice = ok ? "Saved \(chord.displayName)." : "\(chord.displayName) is taken by another application."
         }
     }
 
