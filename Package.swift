@@ -79,6 +79,12 @@ let package = Package(
             ]
         ),
         .target(name: "AudioCapture", dependencies: ["CMiniaudio", "PlatformKit"], path: "Port/AudioCapture"),
+        .target(name: "Recording", dependencies: ["PlatformKit"], path: "Port/Recording"),
+        .testTarget(
+            name: "RecordingTests",
+            dependencies: ["Recording", "PlatformKit", .product(name: "TranscriptionCore", package: "TranscriptionCore")],
+            path: "Port/Tests/RecordingTests"
+        ),
         .executableTarget(
             name: "openmila-cli",
             dependencies: [
@@ -108,6 +114,7 @@ let package = Package(
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
+                "Port/Recording", "Port/Tests/RecordingTests",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
@@ -145,6 +152,7 @@ let package = Package(
             exclude: [
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
+                "Port/Recording", "Port/Tests/RecordingTests",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",
