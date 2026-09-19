@@ -164,7 +164,8 @@ let package = Package(
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
                 "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE",
                 // Apple-only or replaced by a twin under Port/.
-                "Mila/Views", "Mila/Resources", "Mila/Assets.xcassets", "Mila/VoiceMemos",
+                "Mila/Views", "Mila/Resources", "Mila/Assets.xcassets",
+                "Mila/VoiceMemos/VoiceMemosLibrary.swift", "Mila/VoiceMemos/DirectoryWatcher.swift",
                 "Mila/App",
                 "Mila/Audio/MicrophoneRecorder.swift", "Mila/Audio/SystemAudioRecorder.swift",
                 "Mila/Audio/AudioDeviceManager.swift", "Mila/Audio/InputLevelMonitor.swift",

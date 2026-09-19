@@ -50,6 +50,7 @@ final class AppModel {
     let summarizer: RecordingSummarizer
     let postRecording: PostRecordingCoordinator
     let liveAI: LiveAISession
+    let watchedImporter: VoiceMemosImporter
     private var liveFeed: AnyCancellable?
 
     init() {
@@ -89,6 +90,9 @@ final class AppModel {
         postRecording = PostRecordingCoordinator(store: store, transcription: transcription, llm: llmSettings)
         liveAI = LiveAISession(llmSettings: llmSettings, liveAISettings: liveAISettings)
         summarizer.backfillIfNeeded()
+        watchedImporter = VoiceMemosImporter(store: store, transcription: transcription,
+                                             settings: watchedFolders, languageSettings: languageSettings)
+        watchedImporter.start()
         // `openmila file.milaconfig`: the file association hands the path in argv.
         if let path = CommandLine.arguments.dropFirst().first(where: { $0.hasSuffix(".milaconfig") }) {
             configImporter.handleOpen(URL(fileURLWithPath: path))
