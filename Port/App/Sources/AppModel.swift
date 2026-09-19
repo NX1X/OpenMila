@@ -35,6 +35,11 @@ final class AppModel {
     let llmSettings: LLMSettings
     let mcpAccess: MCPAccessSettings
     let audioInput: AudioInputSettings
+    let speakerDirectory: SpeakerDirectory
+    let voiceRecognition: VoiceRecognitionSettings
+    let speakerProfiles: SpeakerProfileStore
+    let meetingDetection: MeetingDetectionSettings
+    let watchedFolders: VoiceMemosSettings
 
     init() {
         OpenMilaLog.install(processName: AppIdentity.name, version: AppIdentity.version)
@@ -56,6 +61,11 @@ final class AppModel {
         llmSettings = LLMSettings()
         mcpAccess = MCPAccessSettings()
         audioInput = AudioInputSettings()
+        speakerDirectory = SpeakerDirectory(directory: platform.paths.dataDirectory)
+        voiceRecognition = VoiceRecognitionSettings()
+        speakerProfiles = SpeakerProfileStore(directory: platform.paths.dataDirectory, settings: voiceRecognition)
+        meetingDetection = MeetingDetectionSettings()
+        watchedFolders = VoiceMemosSettings()
 
         session.onLiveSamples = { [liveTranscriber] samples in
             liveTranscriber.ingest(samples[samples.startIndex..<samples.endIndex])

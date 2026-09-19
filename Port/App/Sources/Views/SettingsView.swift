@@ -19,6 +19,11 @@ struct SettingsView: View {
     @State var storage: Observed<RecordingStorageSettings>
     @State var mcp: Observed<MCPAccessSettings>
     @State var audio: Observed<AudioInputSettings>
+    @State var directory: Observed<SpeakerDirectory>
+    @State var voice: Observed<VoiceRecognitionSettings>
+    @State var meetings: Observed<MeetingDetectionSettings>
+    @State var watched: Observed<VoiceMemosSettings>
+    @State var watchedPath = ""
     @State var betaUpdates = UserDefaults.standard.bool(forKey: "updates.betaChannel")
     @State var updateStatus = ""
     @State var devices: [AudioInputDevice] = []
@@ -37,6 +42,10 @@ struct SettingsView: View {
         _storage = State(wrappedValue: Observed(model.storageSettings))
         _mcp = State(wrappedValue: Observed(model.mcpAccess))
         _audio = State(wrappedValue: Observed(model.audioInput))
+        _directory = State(wrappedValue: Observed(model.speakerDirectory))
+        _voice = State(wrappedValue: Observed(model.voiceRecognition))
+        _meetings = State(wrappedValue: Observed(model.meetingDetection))
+        _watched = State(wrappedValue: Observed(model.watchedFolders))
     }
 
     var body: some View {
@@ -54,8 +63,10 @@ struct SettingsView: View {
                         case "AI Provider": aiProvider
                         case "AI Features": aiFeatures
                         case "Storage": storageSection
-                        case "Watched Folders": Text("Watched folders arrive with the importer port.").font(.callout)
-                        default: Text("Coming with the next views.").font(.callout).foregroundColor(Theme.secondaryText)
+                        case "Speakers": speakersSection
+                        case "Meetings": meetingsSection
+                        case "Watched Folders": watchedSection
+                        default: EmptyView()
                         }
                     }.padding()
                 }
@@ -68,6 +79,58 @@ struct SettingsView: View {
             devices = (try? model.platform.microphone.inputDevices()) ?? []
             if let id = model.audioInput.preferredUID, let d = devices.first(where: { $0.id == id }) { deviceName = d.name }
             storageGB = model.storageSettings.limitGigabytes
+            watchedPath = model.watchedFolders.grantedFolderURL?.path ?? ""
+        }
+    }
+
+    var speakersSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Speakers").font(.headline)
+            Toggle("Recognise the same speaker across recordings", isOn: Binding(
+                get: { voice.object.isEnabled }, set: { voice.object.isEnabled = $0 }))
+            Text("Off by default. When on, a named voice is labelled automatically in later recordings.")
+                .font(.caption).foregroundColor(Theme.secondaryText)
+            Button("Delete everything learned about voices") { model.speakerProfiles.deleteAllProfiles() }
+            Divider()
+            Text("Speaker directory").font(.headline)
+            if directory.object.names.isEmpty {
+                Text("Names you give speakers are remembered here.").font(.caption).foregroundColor(Theme.secondaryText)
+            }
+            ForEach(directory.object.names, id: \.self) { name in
+                HStack {
+                    Text(name).font(.callout)
+                    Button("Remove") { directory.object.remove(name) }
+                }
+            }
+        }
+    }
+
+    var meetingsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Meetings").font(.headline)
+            Toggle("Offer to record when a meeting app starts", isOn: Binding(
+                get: { meetings.object.enabled }, set: { meetings.object.enabled = $0 }))
+            Text("Detected by running process on Linux: Zoom and Microsoft Teams. Google Meet in a browser is not detectable on Wayland.")
+                .font(.caption).foregroundColor(Theme.secondaryText)
+        }
+    }
+
+    var watchedSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Watched Folders").font(.headline)
+            Text("Mila watches the folder iCloud syncs Voice Memos into. OpenMila watches any folder you sync recordings into (Syncthing, Nextcloud, a phone mount) and imports new audio files automatically.")
+                .font(.caption).foregroundColor(Theme.secondaryText)
+            Toggle("Import from the watched folder", isOn: Binding(
+                get: { watched.object.isEnabled }, set: { watched.object.isEnabled = $0 }))
+            HStack {
+                TextField("Folder path", text: $watchedPath)
+                Button("Use folder") {
+                    _ = model.watchedFolders.grantFolder(URL(fileURLWithPath: watchedPath))
+                }
+            }
+            if let granted = watched.object.grantedFolderURL {
+                Text("Watching: \(granted.path)").font(.caption).foregroundColor(Theme.success)
+            }
         }
     }
 
