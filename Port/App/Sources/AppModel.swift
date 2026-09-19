@@ -51,6 +51,7 @@ final class AppModel {
     let postRecording: PostRecordingCoordinator
     let liveAI: LiveAISession
     let watchedImporter: VoiceMemosImporter
+    let meetingPrompt: MeetingPrompt
     private var liveFeed: AnyCancellable?
 
     init() {
@@ -93,6 +94,9 @@ final class AppModel {
         watchedImporter = VoiceMemosImporter(store: store, transcription: transcription,
                                              settings: watchedFolders, languageSettings: languageSettings)
         watchedImporter.start()
+        meetingPrompt = MeetingPrompt(signals: platform.meetings ?? LinuxMeetingSignals(), settings: meetingDetection,
+                                      notifier: platform.notifier, session: session)
+        meetingPrompt.start()
         // `openmila file.milaconfig`: the file association hands the path in argv.
         if let path = CommandLine.arguments.dropFirst().first(where: { $0.hasSuffix(".milaconfig") }) {
             configImporter.handleOpen(URL(fileURLWithPath: path))

@@ -21,6 +21,7 @@ struct HomeView: View {
     @State var liveAISettings: Observed<LiveAISettings>
     @State var post: Observed<PostRecordingCoordinator>
     @State var renameDraft = ""
+    @State var meeting: Observed<MeetingPrompt>
     @State var tick = 0
     @State var sourceName: String? = "Microphone"
     @State var targetName: String? = nil
@@ -35,6 +36,7 @@ struct HomeView: View {
         _liveAI = State(wrappedValue: Observed(model.liveAI))
         _liveAISettings = State(wrappedValue: Observed(model.liveAISettings))
         _post = State(wrappedValue: Observed(model.postRecording))
+        _meeting = State(wrappedValue: Observed(model.meetingPrompt))
     }
 
     var targets: [AudioCaptureTarget] { (try? model.platform.appAudio?.targets()) ?? [] }
@@ -58,6 +60,19 @@ struct HomeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Record").font(.title2)
+            if let offer = meeting.object.offer {
+                HStack {
+                    switch offer {
+                    case .start(let m):
+                        Text("\(m.appName) started. Record this meeting?").font(.callout)
+                        Button("Record meeting") { sourceName = "Meeting (mic + system)"; start(); model.meetingPrompt.dismiss() }
+                    case .stop(let m):
+                        Text("\(m.appName) ended. Stop recording?").font(.callout)
+                        Button("Stop") { model.stopRecording(); model.meetingPrompt.dismiss(); tick += 1 }
+                    }
+                    Button("Not now") { model.meetingPrompt.dismiss() }
+                }
+            }
             HStack {
                 Text("Source").font(.callout)
                 Picker(of: ["Microphone", "System audio", "Meeting (mic + system)"], selection: $sourceName)
