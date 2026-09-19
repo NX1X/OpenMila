@@ -1,3 +1,4 @@
+// Modified by NX1X for OpenMila; see CHANGES.md.
 import Foundation
 
 /// Where Mila's own copy of the `claude` CLI lives, how its download URLs are
@@ -116,7 +117,13 @@ enum ClaudeManagedInstall {
     /// accepted: Mila is a macOS app, so a manifest key naming a Linux or
     /// Windows build is either a bug or a redirect attempt.
     static func isPlausiblePlatform(_ platform: String) -> Bool {
-        platform == "darwin-arm64" || platform == "darwin-x64"
+        #if os(Linux)
+        return platform == "linux-x64" || platform == "linux-arm64"
+        #elseif os(Windows)
+        return platform == "win32-x64"
+        #else
+        return platform == "darwin-arm64" || platform == "darwin-x64"
+        #endif
     }
 
     // MARK: - Platform selection
@@ -134,6 +141,18 @@ enum ClaudeManagedInstall {
     /// machine that isn't running under Rosetta.
     static func platformKey(machine: String = currentMachine(),
                             isTranslated: Bool = isRunningTranslated()) -> String? {
+        #if os(Linux)
+        switch machine {
+        case "arm64", "aarch64": return "linux-arm64"
+        case "x86_64", "amd64": return "linux-x64"
+        default: return nil
+        }
+        #elseif os(Windows)
+        switch machine {
+        case "x86_64", "amd64", "AMD64": return "win32-x64"
+        default: return nil
+        }
+        #else
         switch machine {
         case "arm64", "aarch64":
             return "darwin-arm64"
@@ -143,6 +162,7 @@ enum ClaudeManagedInstall {
         default:
             return nil
         }
+        #endif
     }
 
     /// `uname -m`, without shelling out.

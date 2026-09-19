@@ -1,7 +1,8 @@
+// Modified by NX1X for OpenMila; see CHANGES.md.
 import Foundation
 import Combine
 import CryptoKit
-import os.log
+import os
 
 private let modelLogger = Logger(subsystem: "io.island.mila.Mila",
                                  category: "models")

@@ -1,6 +1,7 @@
+// Modified by NX1X for OpenMila; see CHANGES.md.
 import Foundation
 import whisper
-#if canImport(os)
+#if canImport(os.log)
 import os.log
 private let whisperLog = Logger(subsystem: "io.island.mila.TranscriptionCore", category: "whisper")
 #endif
@@ -10,7 +11,7 @@ private let whisperLog = Logger(subsystem: "io.island.mila.TranscriptionCore", c
 /// WhisperEngine must still compile — there this is a no-op. Wrapping the whole
 /// message in `.public` is fine: these lines carry model names + timings, no PII.
 @inline(__always) private func whisperNotice(_ message: String) {
-#if canImport(os)
+#if canImport(os.log)
     whisperLog.notice("\(message, privacy: .public)")
 #endif
 }

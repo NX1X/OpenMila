@@ -47,3 +47,13 @@ CLAUDE.md
 CLAUDE.local.md
 **/CLAUDE.md
 .claude/
+# Port build output
+build-linux/
+build-windows/
+*.AppImage
+*.deb
+*.msi
+*.msix
+dist/
+Port/App/.build/
+Port/App/Package.resolved
