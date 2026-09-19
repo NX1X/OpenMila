@@ -24,6 +24,8 @@ let package = Package(
                 .product(name: "OpenMilaLinux", package: "OpenMila", condition: .when(platforms: [.linux])),
                 .product(name: "SwiftCrossUI", package: "swift-cross-ui"),
                 .product(name: "DefaultBackend", package: "swift-cross-ui"),
+                .product(name: "GtkBackend", package: "swift-cross-ui", condition: .when(platforms: [.linux])),
+                .product(name: "Gtk", package: "swift-cross-ui", condition: .when(platforms: [.linux])),
             ],
             path: "Sources",
             swiftSettings: [.unsafeFlags(["-enable-testing"])]

@@ -13,6 +13,22 @@ enum SidebarSection: Hashable {
     case dictations
     case trash
 
+    var folderName: String? {
+        if case .folder(let name) = self { return name }
+        return nil
+    }
+
+    /// Upstream's SF Symbols mapped to freedesktop icon names (see Icons.swift).
+    var icon: String {
+        switch self {
+        case .home: return AppIcon.home
+        case .all: return AppIcon.list
+        case .folder: return AppIcon.folder
+        case .dictations: return AppIcon.dictation
+        case .trash: return AppIcon.trash
+        }
+    }
+
     var title: String {
         switch self {
         case .home: return "Home"
@@ -62,7 +78,7 @@ struct ContentView: View {
             if section == .home {
                 HomeView(model: model, transcription: transcription)
             } else {
-                HistoryListView(recordings: visibleRecordings, transcription: transcription,
+                HistoryListView(model: model, recordings: visibleRecordings, transcription: transcription,
                                 selection: $selectedRecording, title: section?.title ?? "")
             }
         } detail: {
@@ -166,7 +182,16 @@ struct SidebarView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(AppIdentity.name).font(.headline).padding()
             List(sections, id: \.self, selection: $section) { item in
-                Text(item.title).font(.callout)
+                HStack(spacing: 8) {
+                    PlatformIcon(item.icon)
+                    Text(item.title).font(.callout)
+                }
+                .platformDropTarget(enabled: item.folderName != nil) { id in
+                    guard let name = item.folderName,
+                          var recording = store.object.recordings.first(where: { $0.id == id }) else { return }
+                    recording.folder = name
+                    _ = store.object.update(recording)
+                }
             }
             Spacer()
             Menu("Folders") {
@@ -212,10 +237,39 @@ struct SidebarView: View {
 }
 
 struct HistoryListView: View {
+    let model: AppModel
     let recordings: [Recording]
     let transcription: Observed<TranscriptionService>
     @Binding var selection: UUID?
     let title: String
+
+    /// Upstream: RecordingContextMenu.
+    func rowActions(_ recording: Recording) -> [ContextMenuItem] {
+        let store = model.store
+        if recording.deletedAt != nil {
+            return [
+                ContextMenuItem("Restore") { store.restore(recording) },
+                ContextMenuItem("Delete permanently", destructive: true) { store.permanentlyDelete(recording) },
+            ]
+        }
+        var items: [ContextMenuItem] = [
+            ContextMenuItem("Open") { selection = recording.id },
+            ContextMenuItem("Re-transcribe") { model.transcription.enqueue(recording, isRetranscription: true) },
+            ContextMenuItem("Regenerate summary") { model.summarizer.regenerate(recording) },
+        ]
+        if recording.folder != nil {
+            items.append(ContextMenuItem("Remove from folder") {
+                var updated = recording; updated.folder = nil; _ = store.update(updated)
+            })
+        }
+        for folder in store.folders where folder != recording.folder {
+            items.append(ContextMenuItem("Move to \(folder)") {
+                var updated = recording; updated.folder = folder; _ = store.update(updated)
+            })
+        }
+        items.append(ContextMenuItem("Move to Trash", destructive: true) { store.delete(recording) })
+        return items
+    }
 
     func status(_ recording: Recording) -> String {
         if transcription.object.activeRecordingID == recording.id {
@@ -243,6 +297,8 @@ struct HistoryListView: View {
                         Text("\(Self.dateText(recording.createdAt))  \(status(recording))")
                             .font(.caption).foregroundColor(Theme.secondaryText)
                     }
+                    .platformContextMenu(rowActions(recording))
+                    .platformDragSource(recording.id)
                 }
             }
         }

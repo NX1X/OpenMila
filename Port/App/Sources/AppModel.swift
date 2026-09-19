@@ -61,6 +61,7 @@ final class AppModel {
     let watchedImporter: VoiceMemosImporter
     let meetingPrompt: MeetingPrompt
     private var liveFeed: AnyCancellable?
+    private var dictationStatus: AnyCancellable?
 
     init() {
         OpenMilaLog.install(processName: AppIdentity.name, version: AppIdentity.version)
@@ -109,6 +110,25 @@ final class AppModel {
         if let path = CommandLine.arguments.dropFirst().first(where: { $0.hasSuffix(".milaconfig") }) {
             configImporter.handleOpen(URL(fileURLWithPath: path))
         }
+        // Upstream shows a floating, non-activating "pill" while dictating. A
+        // separate window here would take keyboard focus on Wayland, and the
+        // dictated text would then paste into the pill itself; desktop
+        // notifications never take focus, so the status goes there instead.
+        dictationStatus = dictation.$state
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [platform, hotkeys] state in
+                switch state {
+                case .recording(let lang):
+                    let chord = hotkeys.chord(for: lang).displayName
+                    platform.notifier.notify(title: "Dictating (\(lang == .english ? "English" : "Hebrew"))",
+                                             body: "Speak, then press \(chord) again to paste.")
+                case .transcribing:
+                    break
+                case .idle:
+                    break
+                }
+            }
         Task { [dictation, hotkeys] in
             await hotkeys.activate { language in Task { await dictation.toggle(language) } }
         }
