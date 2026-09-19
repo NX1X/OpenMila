@@ -162,7 +162,7 @@ let package = Package(
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
-                "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE",
+                "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE", "UPSTREAM_VERSION", "packaging",
                 // Apple-only or replaced by a twin under Port/.
                 "Mila/Views", "Mila/Resources", "Mila/Assets.xcassets",
                 "Mila/VoiceMemos/VoiceMemosLibrary.swift", "Mila/VoiceMemos/DirectoryWatcher.swift",
@@ -204,7 +204,7 @@ let package = Package(
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",
-                "SECURITY.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE",
+                "SECURITY.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE", "UPSTREAM_VERSION", "packaging",
                 // Tests of Apple-bound code; the list shrinks as twins land.
                 // Fixture manifests carry only darwin keys; the port asks for linux/win32 keys.
                 "MilaTests/ClaudeBinaryInstallerTests.swift", "MilaTests/ClaudeManagedInstallTests.swift",

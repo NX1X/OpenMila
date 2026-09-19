@@ -7,7 +7,15 @@ import SwiftCrossUI
 
 @main
 struct OpenMilaApp: App {
-    let model = AppModel()
+    let model: AppModel
+
+    init() {
+        if CommandLine.arguments.contains("--version") {
+            print("\(AppIdentity.name) \(AppIdentity.version) (Mila \(AppIdentity.upstreamVersion))")
+            exit(0)
+        }
+        model = AppModel()
+    }
 
     var body: some Scene {
         WindowGroup(AppIdentity.name) {
