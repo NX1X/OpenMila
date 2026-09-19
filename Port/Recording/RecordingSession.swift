@@ -17,7 +17,7 @@
 import Foundation
 import PlatformKit
 
-public enum RecordingSource: String, Sendable {
+public enum CaptureSource: String, Sendable {
     case microphone, systemAudio, meeting
 }
 
@@ -73,7 +73,7 @@ public struct MeetingMixer: Sendable {
 @MainActor
 public final class RecordingSession {
     public private(set) var state: RecordingState = .idle
-    public private(set) var source: RecordingSource = .microphone
+    public private(set) var source: CaptureSource = .microphone
     public private(set) var fileURL: URL?
     public private(set) var captureEpoch = 0
     /// Mic frames captured by the most recent recording, read after `stop()`
@@ -109,7 +109,7 @@ public final class RecordingSession {
         self.appAudio = appAudio
     }
 
-    public func start(source: RecordingSource, outputURL: URL,
+    public func start(source: CaptureSource, outputURL: URL,
                       micDeviceID: String? = nil, appTarget: AudioCaptureTarget? = nil) throws {
         guard state == .idle else { return }
         self.source = source

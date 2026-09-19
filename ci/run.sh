@@ -19,6 +19,10 @@ if ! command -v swift >/dev/null 2>&1; then
 fi
 export LD_LIBRARY_PATH="$OPENMILA_WHISPER_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 FLAGS=(-Xcc "-I$OPENMILA_WHISPER_PREFIX/include" -Xlinker "-L$OPENMILA_WHISPER_PREFIX/lib")
+# The app package needs the classic build system: Swift 6.4's default one
+# compiles every target of SwiftCrossUI, including Windows-only ones, and
+# fails on Linux. -j 3 keeps the app's dependency builds inside 14 GB.
+APP_FLAGS=(--build-system native -j 3 "${FLAGS[@]}")
 
 log() { printf '\n==> %s\n' "$1"; }
 
@@ -77,7 +81,7 @@ KNOWN_FAILURES=(
 stage_core() {
   log "upstream core: build, then upstream's own unit tests"
   retry swift build --build-tests "${FLAGS[@]}"
-  scripts/port/link-resources.sh "$(swift build --show-bin-path "${FLAGS[@]}")"
+  scripts/port/link-resources.sh "$(swift build --show-bin-path "${FLAGS[@]}" 2>/dev/null | tail -1)"
   local out
   out="$(mktemp)"
   swift test --skip-build "${FLAGS[@]}" --filter '^MilaTests\.' > "$out" 2>&1 || true
@@ -106,8 +110,9 @@ stage_port() {
 }
 
 stage_cli() {
-  log "openmila-cli builds"
+  log "openmila-cli and the openmila app build"
   retry swift build --product openmila-cli "${FLAGS[@]}"
+  (cd Port/App && retry swift build --product openmila "${APP_FLAGS[@]}")
 }
 
 stage_e2e() {

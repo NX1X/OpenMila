@@ -29,6 +29,14 @@ let package = Package(
     name: "OpenMila",
     products: [
         .library(name: "OpenMilaShims", targets: ["Combine", "OSLog", "os", "CryptoKit", "Accelerate"]),
+        // Everything the app package (Port/App) links: the upstream core plus
+        // the port layers. The app lives in its own package so that the root's
+        // `swift test` never has to build the UI toolkit.
+        .library(name: "OpenMilaCore", targets: [
+            "Mila", "Combine", "OSLog", "os", "CryptoKit", "OpenMilaLogging",
+            "PlatformKit", "AudioCapture", "Recording", "Updater",
+        ]),
+        .library(name: "OpenMilaLinux", targets: ["LinuxPlatform"]),
     ],
     dependencies: [
         .package(path: "Packages/MilaKit"),
@@ -127,7 +135,7 @@ let package = Package(
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "docs",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
@@ -145,7 +153,10 @@ let package = Package(
                 "Mila/Models/KeychainHelper.swift", "Mila/Models/SystemCapabilities.swift",
             ],
             sources: ["Mila", "Port/CoreTwins"],
-            swiftSettings: [.unsafeFlags(["-swift-version", "5"])]
+            // -enable-testing: upstream's types are internal (Mila is one Xcode
+            // module); the port's app is a second module and reaches them via
+            // `@testable import Mila`. Kept on in every configuration.
+            swiftSettings: [.unsafeFlags(["-swift-version", "5", "-enable-testing"])]
         ),
 
         // MARK: Tests
@@ -165,7 +176,7 @@ let package = Package(
             exclude: [
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "docs",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",

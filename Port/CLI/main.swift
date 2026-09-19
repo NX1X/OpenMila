@@ -153,7 +153,7 @@ case "session":
     let session = await RecordingSession(microphone: microphone, appAudio: system)
     do {
         let target = try system.targets().first
-        let source: RecordingSource = args.contains("--system") ? .systemAudio : (args.contains("--meeting") ? .meeting : .microphone)
+        let source: CaptureSource = args.contains("--system") ? .systemAudio : (args.contains("--meeting") ? .meeting : .microphone)
         try await session.start(source: source, outputURL: URL(fileURLWithPath: out), appTarget: target)
         print("session recording \(source) for \(seconds)s -> \(out)")
         try? await Task.sleep(nanoseconds: UInt64(seconds / 2 * 1_000_000_000))
