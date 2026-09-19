@@ -8,6 +8,7 @@
 
 import AudioCapture
 import Foundation
+import OpenMilaLogging
 import PlatformKit
 import TranscriptionCore
 
@@ -54,6 +55,7 @@ func writeWAV(_ samples: [Float], to path: String) throws {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
+OpenMilaLog.install(processName: "openmila-cli", version: "0.0.0-dev", alsoStderr: false)
 let microphone = MiniaudioMicrophone()
 
 switch args.first {
@@ -91,6 +93,15 @@ case "record":
         }
     } catch { fail("\(error.localizedDescription)") }
 
+case "logs":
+    // Where a bug report's logs come from. Prints the directory and the tail.
+    print("log directory: \(OpenMilaLog.defaultDirectory.path)")
+    if let text = try? String(contentsOf: OpenMilaLog.currentFile, encoding: .utf8) {
+        print(text.split(separator: "\n").suffix(40).joined(separator: "\n"))
+    } else {
+        print("(no log file yet)")
+    }
+
 case "transcribe":
     guard args.count >= 2, let model = option("--model", in: args) else {
         fail("usage: openmila-cli transcribe <file.wav> --model <path> [--lang en]")
@@ -101,5 +112,5 @@ case "transcribe":
     } catch { fail("\(error.localizedDescription)") }
 
 default:
-    print("usage: openmila-cli devices | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
+    print("usage: openmila-cli devices | logs | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
 }

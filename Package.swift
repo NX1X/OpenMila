@@ -82,7 +82,7 @@ let package = Package(
         .executableTarget(
             name: "openmila-cli",
             dependencies: [
-                "AudioCapture", "PlatformKit",
+                "AudioCapture", "PlatformKit", "OpenMilaLogging",
                 .product(name: "TranscriptionCore", package: "TranscriptionCore"),
             ],
             path: "Port/CLI"
@@ -150,6 +150,8 @@ let package = Package(
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",
                 "SECURITY.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE",
                 // Tests of Apple-bound code; the list shrinks as twins land.
+                // Fixture manifests carry only darwin keys; the port asks for linux/win32 keys.
+                "MilaTests/ClaudeBinaryInstallerTests.swift", "MilaTests/ClaudeManagedInstallTests.swift",
                 "MilaTests/AIOverviewSummaryTests.swift",
                 "MilaTests/AISettingsKeyCompatibilityTests.swift",
                 "MilaTests/ClaudeSetupSettingsTests.swift",

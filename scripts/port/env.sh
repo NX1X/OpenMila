@@ -21,3 +21,9 @@ fi
 export PATH="$OPENMILA_SWIFT_HOME/usr/bin:$PATH"
 export LD_LIBRARY_PATH="$OPENMILA_WHISPER_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export OPENMILA_SWIFT_FLAGS="-Xcc -I$OPENMILA_WHISPER_PREFIX/include -Xlinker -L$OPENMILA_WHISPER_PREFIX/lib"
+
+# Link bundled resources beside the build products so Bundle.main finds them:
+#   openmila-link-resources
+openmila-link-resources() {
+  "$(dirname "${BASH_SOURCE[0]}")/link-resources.sh" "$(swift build --show-bin-path $OPENMILA_SWIFT_FLAGS)"
+}

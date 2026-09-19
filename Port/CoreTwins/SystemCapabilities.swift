@@ -37,7 +37,7 @@ struct SystemCapabilities: Sendable, Equatable {
     static func readFromHardware() -> SystemCapabilities {
         let info = ProcessInfo.processInfo
         let ramGB = Int((Double(info.physicalMemory) / 1_073_741_824.0).rounded())
-        let cores = info.processorCount
+        let cores = info.activeProcessorCount
         return SystemCapabilities(
             modelIdentifier: Self.machineModel(),
             marketingName: Self.machineModel(),

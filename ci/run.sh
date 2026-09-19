@@ -71,14 +71,13 @@ KNOWN_FAILURES=(
   "LLMRunnerTests.test_run_claude_unchanged_resolvesExecutableAndSpawns"
   "LLMRunnerTests.test_runner_passes_prompt_in_argv_and_closes_stdin"
   "ObsidianVaultSettingsTests.test_isContained_agrees_for_existing_and_missing_destinations"
-  "RemoteTranscriptionSettingsTests.test_editingEndpointResetsTestStatus"
-  "RemoteTranscriptionSettingsTests.test_testConnection_failsOnAuthError"
   "SpeakerDiarizerCancelTests.test_cancelling_runPython_terminates_the_subprocess_promptly"
 )
 
 stage_core() {
   log "upstream core: build, then upstream's own unit tests"
   retry swift build --build-tests "${FLAGS[@]}"
+  scripts/port/link-resources.sh "$(swift build --show-bin-path "${FLAGS[@]}")"
   local out
   out="$(mktemp)"
   swift test --skip-build "${FLAGS[@]}" --filter '^MilaTests\.' > "$out" 2>&1 || true

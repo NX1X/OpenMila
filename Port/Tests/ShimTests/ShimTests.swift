@@ -129,3 +129,20 @@ private struct StoredSegmentProbe: SpeakerTextSegment {
     let speaker: String?
     let text: String
 }
+
+final class LogBootstrapTests: XCTestCase {
+    func test_file_sink_rotates_and_keeps_bounded_history() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("openmila-log-\(UUID())")
+        let sink = RotatingFileSink(directory: dir, baseName: "t", maxBytes: 200, keep: 2)
+        for i in 0..<100 { sink.write("line \(i) padding padding padding padding") }
+        let names = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
+        XCTAssertEqual(names, ["t.1.log", "t.2.log", "t.log"])
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    func test_level_parsing_defaults_to_info() {
+        XCTAssertEqual(OpenMilaLog.level(from: nil), .info)
+        XCTAssertEqual(OpenMilaLog.level(from: "DEBUG"), .debug)
+        XCTAssertEqual(OpenMilaLog.level(from: "nonsense"), .info)
+    }
+}
