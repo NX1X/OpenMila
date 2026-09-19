@@ -27,7 +27,10 @@ at [github.com/island-io/mila](https://github.com/island-io/mila). Thank you
 for building it, and for building it in the open. OpenMila reuses Mila's
 transcription engine, data model and application logic unchanged wherever the
 platform allows, and re-implements only what is tied to macOS. The list of
-upstream files this port modifies is in [CHANGES.md](CHANGES.md).
+upstream files this port modifies is in [CHANGES.md](CHANGES.md). Mila's
+own README, with its feature list, requirements and changelog, is kept
+verbatim at [docs/upstream/MILA-README.md](docs/upstream/MILA-README.md)
+and refreshed on every upstream sync.
 
 OpenMila is built with [Dagger](https://dagger.io).
 
