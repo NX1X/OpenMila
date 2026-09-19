@@ -23,7 +23,7 @@ struct AboutView: View {
                 Text("Version \(AppIdentity.version), based on Mila \(AppIdentity.upstreamVersion)")
                     .font(.callout).foregroundColor(Theme.secondaryText)
 
-                Text("Mila was created by Uri Harduf at Island, and released as open source under the Apache License 2.0. OpenMila brings it to Linux and Windows. Thank you, Uri and Island, for building Mila and sharing it.")
+                Text("Based on Mila by Uri Harduf at Island, released under the Apache License 2.0. OpenMila ports it to Linux and Windows.")
                     .font(.body)
                 HStack {
                     link("Mila on GitHub", "https://github.com/island-io/mila")
@@ -37,6 +37,7 @@ struct AboutView: View {
                 Divider()
                 Text("Ported and maintained by NX1X").font(.headline)
                 HStack {
+                    link("Website", AppIdentity.website)
                     link("OpenMila on GitHub", "https://github.com/\(AppIdentity.repository)")
                     link("Report a problem", "https://github.com/\(AppIdentity.repository)/issues")
                     link("Contact", "https://nx1xlab.dev/contact")

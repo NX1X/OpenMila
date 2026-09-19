@@ -20,6 +20,7 @@ enum AppIdentity {
     static let version = "1.9.5+port.0-dev"
     static let upstreamVersion = "1.9.5-beta.2"
     static let repository = "NX1X/OpenMila"
+    static let website = "https://openmila.nx1xlab.dev"
 }
 
 /// App-wide UI requests that menus raise and views present.

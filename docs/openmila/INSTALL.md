@@ -5,7 +5,8 @@
 Tested on Ubuntu 26.04 (GNOME, Wayland and X11). Other current desktops with
 GTK 4 should work.
 
-1. Download `OpenMila-<version>-x86_64.AppImage` from the
+1. Download `OpenMila-<version>-x86_64.AppImage` from
+   [OpenMila.nx1xlab.dev](https://openmila.nx1xlab.dev) or the
    [releases page](https://github.com/NX1X/OpenMila/releases) and check it
    against the `.sha256` file next to it:
    ```bash

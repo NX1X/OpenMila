@@ -7,6 +7,8 @@ and English transcription with whisper.cpp, speaker diarization, AI summaries,
 and the MCP server for your AI tools. Nothing leaves your machine unless you
 point it at a server of your own.
 
+Website: [OpenMila.nx1xlab.dev](https://openmila.nx1xlab.dev)
+
 > OpenMila is an independent community port of Mila for Linux and Windows.
 > It is not affiliated with or endorsed by Island Technology, Inc.
 
@@ -23,8 +25,7 @@ Linux beta.
 
 Mila was created by [Uri Harduf](https://github.com/urisland) at
 [Island](https://www.island.io/) and released under the Apache License 2.0
-at [github.com/island-io/mila](https://github.com/island-io/mila). Thank you
-for building it, and for building it in the open. OpenMila reuses Mila's
+at [github.com/island-io/mila](https://github.com/island-io/mila). OpenMila reuses Mila's
 transcription engine, data model and application logic unchanged wherever the
 platform allows, and re-implements only what is tied to macOS. The list of
 upstream files this port modifies is in [CHANGES.md](CHANGES.md). Mila's
