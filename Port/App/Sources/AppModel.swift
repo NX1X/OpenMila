@@ -6,6 +6,7 @@
 
 import AudioCapture
 import Dictation
+import Combine
 import Foundation
 import LinuxPlatform
 import OpenMilaLogging
@@ -46,6 +47,10 @@ final class AppModel {
     let liveAISettings: LiveAISettings
     let configImporter: MilaConfigImporter
     let whatsNewGate = WhatsNewGate()
+    let summarizer: RecordingSummarizer
+    let postRecording: PostRecordingCoordinator
+    let liveAI: LiveAISession
+    private var liveFeed: AnyCancellable?
 
     init() {
         OpenMilaLog.install(processName: AppIdentity.name, version: AppIdentity.version)
@@ -80,6 +85,10 @@ final class AppModel {
         configImporter = MilaConfigImporter(remote: remoteSettings, language: languageSettings,
                                             liveAI: liveAISettings, diarization: diarizationSettings,
                                             meetingDetection: meetingDetection)
+        summarizer = RecordingSummarizer(store: store, llmSettings: llmSettings, liveAISettings: liveAISettings)
+        postRecording = PostRecordingCoordinator(store: store, transcription: transcription, llm: llmSettings)
+        liveAI = LiveAISession(llmSettings: llmSettings, liveAISettings: liveAISettings)
+        summarizer.backfillIfNeeded()
         // `openmila file.milaconfig`: the file association hands the path in argv.
         if let path = CommandLine.arguments.dropFirst().first(where: { $0.hasSuffix(".milaconfig") }) {
             configImporter.handleOpen(URL(fileURLWithPath: path))
@@ -115,10 +124,23 @@ final class AppModel {
         currentRecordingStart = Date()
         liveTranscriber.start(language: languageSettings.current.rawValue)
         platform.sleep.acquire(reason: "Recording")
+        if isLiveAIActive {
+            liveAI.start()
+            var lastFed = ""
+            liveFeed = liveTranscriber.$fullText
+                .receive(on: DispatchQueue.main)
+                .sink { [liveAI] text in
+                    if text != lastFed { lastFed = text; liveAI.feed(transcript: text) }
+                }
+        }
     }
 
     func stopRecording() {
         platform.sleep.release()
+        liveFeed?.cancel(); liveFeed = nil
+        let liveSummary = liveAI.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let liveItems = liveAI.actionItems
+        liveAI.cancel()
         guard let url = session.stop() else { return }
         _ = liveTranscriber.stop()
         let duration = (try? WAVReader.loadSamples(url: url).count).map { Double($0) / WhisperAudioFormat.sampleRate } ?? 0
@@ -141,11 +163,18 @@ final class AppModel {
             duration: duration,
             source: source,
             audioFileName: url.lastPathComponent,
-            language: languageSettings.current.rawValue
+            language: languageSettings.current.rawValue,
+            summary: liveSummary.isEmpty ? nil : liveSummary,
+            actionItems: liveItems.isEmpty ? nil : liveItems
         )
         store.add(recording)
         transcription.enqueue(recording)
+        postRecording.present(recording)
         currentRecordingURL = nil
+    }
+
+    var isLiveAIActive: Bool {
+        liveAISettings.enabled && liveAISettings.isLiveAIReady(llmConfigured: llmSettings.isConfigured)
     }
 
     static func defaultTitle(for date: Date) -> String {

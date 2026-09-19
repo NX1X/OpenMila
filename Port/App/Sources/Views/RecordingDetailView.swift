@@ -63,6 +63,7 @@ struct RecordingDetailView: View {
                         catch { notice = error.localizedDescription }
                     }
                     Button("Re-transcribe") { model.transcription.enqueue(recording, isRetranscription: true) }
+                    Button("Regenerate summary") { model.summarizer.regenerate(recording) }
                     Menu("Move to folder") {
                         Button("No folder") { moveTo(nil) }
                         ForEach(model.store.folders, id: \.self) { name in
@@ -96,7 +97,13 @@ struct RecordingDetailView: View {
             if let summary = recording.summary, !summary.isEmpty {
                 Text("Summary").font(.headline)
                 Text(summary).font(.body).multilineTextAlignment(summary.isRTLText ? .trailing : .leading)
+                if let items = recording.actionItems, !items.isEmpty {
+                    Text("Action items").font(.headline)
+                    ForEach(items) { Text("- \($0.text)").font(.callout) }
+                }
                 Divider()
+            } else if model.summarizer.isSummarizing(recording.id) {
+                Text("Summarising...").font(.caption).foregroundColor(Theme.secondaryText)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
