@@ -45,6 +45,8 @@ let package = Package(
         .package(url: "https://github.com/OpenCombine/OpenCombine.git", exact: "0.14.0"),
         .package(url: "https://github.com/apple/swift-log.git", exact: "1.15.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.2"),
+        // The MCP helper's SDK, pinned exactly as upstream's project.yml pins it.
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
     ],
     targets: [
         // MARK: Shims (Apple module names, open-source implementations)
@@ -119,6 +121,21 @@ let package = Package(
                 .product(name: "TranscriptionCore", package: "TranscriptionCore"),
             ],
             path: "Port/CLI"
+        ),
+
+        // The MCP helper (`mila-mcp` upstream): upstream's MilaMCP source in
+        // place, MilaKit + the MCP SDK, same as project.yml's mila-mcp target.
+        .executableTarget(
+            name: "openmila-mcp",
+            dependencies: [
+                .product(name: "MilaKit", package: "MilaKit"),
+                .product(name: "MCP", package: "swift-sdk"),
+                // The SDK uses swift-crypto off macOS through a conditional
+                // dependency the build tool does not carry to the link step.
+                .product(name: "Crypto", package: "swift-crypto"),
+            ],
+            path: "MilaMCP",
+            swiftSettings: [.unsafeFlags(["-swift-version", "5"])]
         ),
 
         // MARK: Upstream core, consumed in place

@@ -19,7 +19,11 @@ public struct LinuxAppPaths: AppPaths {
             if let value = environment[key], value.hasPrefix("/") { return URL(fileURLWithPath: value) }
             return home.appendingPathComponent(fallback)
         }
-        dataDirectory = xdg("XDG_DATA_HOME", ".local/share").appendingPathComponent("openmila", isDirectory: true)
+        // "Mila", not "openmila": upstream's cross-process contracts (the MCP
+        // helper's store pointer, mcp-access.json, the LLM sandbox, the managed
+        // Claude install) all resolve `<app support>/Mila` by name in code the
+        // port reuses unchanged. One data root keeps them consistent.
+        dataDirectory = xdg("XDG_DATA_HOME", ".local/share").appendingPathComponent("Mila", isDirectory: true)
         cacheDirectory = xdg("XDG_CACHE_HOME", ".cache").appendingPathComponent("openmila", isDirectory: true)
         logDirectory = xdg("XDG_STATE_HOME", ".local/state").appendingPathComponent("openmila/logs", isDirectory: true)
         let binDir = executable.deletingLastPathComponent()

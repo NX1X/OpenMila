@@ -110,8 +110,9 @@ stage_port() {
 }
 
 stage_cli() {
-  log "openmila-cli and the openmila app build"
+  log "openmila-cli, openmila-mcp and the openmila app build"
   retry swift build --product openmila-cli "${FLAGS[@]}"
+  retry swift build --product openmila-mcp "${FLAGS[@]}"
   (cd Port/App && retry swift build --product openmila "${APP_FLAGS[@]}")
 }
 
