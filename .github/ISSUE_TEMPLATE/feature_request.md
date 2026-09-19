@@ -1,18 +1,20 @@
 ---
 name: Feature request
-about: Suggest an idea or improvement for Mila
+about: Suggest an improvement for OpenMila
 title: ''
 labels: enhancement
 assignees: ''
 ---
 
+<!-- OpenMila follows Mila's features. A new capability is best proposed to Mila
+     itself (https://github.com/island-io/mila/issues); once it lands there, it
+     comes to OpenMila. Requests about how something works on Linux or Windows
+     belong here. -->
+
 **Problem / use case**
-What are you trying to do that Mila doesn't support today?
 
 **Proposed solution**
-What you'd like to see.
 
-**Alternatives considered**
+**Operating system(s) it applies to**
 
 **Additional context**
-Anything else — mockups, examples, related tools.

@@ -11,6 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEST="${1:?usage: link-resources.sh <products-dir>}"
 mkdir -p "$DEST"
-for entry in ConnectionTestSample.wav Credits.html ggml-silero-v5.1.2.bin DiarizationModels; do
+# Credits.html is the macOS About panel; OpenMila ships its own notices.
+for entry in ConnectionTestSample.wav ggml-silero-v5.1.2.bin DiarizationModels; do
   ln -sfn "$ROOT/Mila/Resources/$entry" "$DEST/$entry"
 done

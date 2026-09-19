@@ -42,6 +42,17 @@ port build. Features, models and engine pins track upstream; the port adds
 platform code, not features. The Mila version currently matched is in
 [`UPSTREAM_VERSION`](UPSTREAM_VERSION).
 
+## Documentation
+
+- [Installing and using OpenMila](docs/openmila/INSTALL.md)
+- [Using OpenMila with Claude (MCP)](docs/openmila/MCP.md)
+- [Running your own transcription server](docs/REMOTE_TRANSCRIPTION_SERVER.md)
+  and [for a team on Kubernetes](docs/self-hosted-server/README.md): these are
+  Mila's guides, and apply unchanged; the server side does not care which app
+  talks to it.
+- [Contributing](CONTRIBUTING.md), [Security policy](SECURITY.md),
+  [Repository layout](docs/port/LAYOUT.md)
+
 ## Building on Linux (developers)
 
 Ubuntu 26.04, Swift 6.4.0, whisper.cpp from the pinned submodule. See

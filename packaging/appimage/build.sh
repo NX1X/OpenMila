@@ -32,7 +32,8 @@ rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" "$APPDIR/usr/share/openmila" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 cp "$APP_BIN/openmila" "$ROOT_BIN/openmila-cli" "$ROOT_BIN/openmila-mcp" "$APPDIR/usr/bin/"
 # Resources beside the binaries: that is where Bundle.main looks.
-for entry in ConnectionTestSample.wav Credits.html ggml-silero-v5.1.2.bin DiarizationModels; do
+# Credits.html is the macOS About panel; OpenMila ships its own notices.
+for entry in ConnectionTestSample.wav ggml-silero-v5.1.2.bin DiarizationModels; do
   cp -r "$ROOT/Mila/Resources/$entry" "$APPDIR/usr/bin/"
 done
 cp "$WHISPER"/lib/libwhisper.so* "$WHISPER"/lib/libggml*.so* "$APPDIR/usr/lib/"
