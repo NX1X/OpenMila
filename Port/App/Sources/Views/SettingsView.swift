@@ -140,6 +140,16 @@ struct SettingsView: View {
             }
             if let granted = watched.object.grantedFolderURL {
                 Text("Watching: \(granted.path)").font(.caption).foregroundColor(Theme.success)
+                let library = VoiceMemosLibrary(recordingsDirectory: granted)
+                Toggle("Files directly in the folder", isOn: Binding(
+                    get: { watched.object.includeUnfiled }, set: { watched.object.includeUnfiled = $0 }))
+                ForEach((try? library.folders()) ?? [], id: \.uuid) { sub in
+                    Toggle("\(sub.name) (\(sub.count))", isOn: Binding(
+                        get: { watched.object.selectedFolderUUIDs.contains(sub.uuid) },
+                        set: { watched.object.setFolder(sub.uuid, selected: $0) }))
+                }
+                Text("Only files newer than the start date are imported, into the \"Voice Memos\" folder.")
+                    .font(.caption).foregroundColor(Theme.secondaryText)
             }
         }
     }

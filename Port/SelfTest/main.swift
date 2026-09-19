@@ -1,0 +1,168 @@
+// Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
+//
+// Headless end-to-end checks of the real code paths the desktop app uses,
+// against the real data root, for a machine without a display or microphone.
+//
+//   openmila-selftest models            download the English model (large-v3-turbo) via ModelManager
+//   openmila-selftest import <dir>      watched-folder import of <dir>, then transcription
+//   openmila-selftest summarize         summarise the newest recording with the configured `claude` CLI
+//   openmila-selftest list              show the store
+//
+// Settings the tests need are kept in a private UserDefaults suite, so the
+// app's own settings are untouched. Recordings land in the real library,
+// titled so they are easy to find and delete.
+
+import Foundation
+import OpenMilaLogging
+import TranscriptionCore
+@testable import Mila
+
+let args = Array(CommandLine.arguments.dropFirst())
+OpenMilaLog.install(processName: "openmila-selftest", version: "dev", alsoStderr: false)
+
+func say(_ text: String) { print(text); fflush(stdout) }
+func fail(_ text: String) -> Never { FileHandle.standardError.write(Data((text + "\n").utf8)); exit(1) }
+
+@MainActor
+func dataRoot() -> URL {
+    let base = ProcessInfo.processInfo.environment["XDG_DATA_HOME"].map { URL(fileURLWithPath: $0) }
+        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share")
+    return base.appendingPathComponent("Mila", isDirectory: true)
+}
+
+@MainActor
+func suite() -> UserDefaults {
+    let name = "io.github.nx1x.openmila.selftest"
+    return UserDefaults(suiteName: name)!
+}
+
+@MainActor
+func waitFor(_ what: String, timeout: TimeInterval, poll: TimeInterval = 1, _ condition: () -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() { return true }
+        try? await Task.sleep(nanoseconds: UInt64(poll * 1_000_000_000))
+    }
+    say("timed out waiting for \(what)")
+    return false
+}
+
+@MainActor
+func run() async {
+    let root = dataRoot()
+    try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let defaults = suite()
+    let models = ModelManager(modelsDirectory: root.appendingPathComponent("Models", isDirectory: true), defaults: defaults)
+
+    switch args.first {
+    case "models":
+        let model = WhisperModel.openaiTurbo
+        models.refreshInstalled()
+        if models.isInstalled(model) { say("already installed: \(model.name)"); return }
+        say("downloading \(model.displayName) through ModelManager (SHA-256 checked on completion)...")
+        models.download(model)
+        var lastTen = -1
+        let ok = await waitFor("the download", timeout: 3600, poll: 2) {
+            if let p = models.downloads[model.name] {
+                let ten = Int(p * 10)
+                if ten != lastTen { lastTen = ten; say("  \(ten * 10)%") }
+            }
+            if let err = models.lastDownloadErrors[model.name] { fail("download failed: \(err)") }
+            return models.isInstalled(model)
+        }
+        say(ok ? "installed and verified: \(models.url(for: model).path)" : "not installed")
+
+    case "import":
+        guard args.count >= 2 else { fail("usage: openmila-selftest import <folder>") }
+        let folder = URL(fileURLWithPath: args[1])
+        models.refreshInstalled()
+        guard models.isInstalled(.openaiTurbo) else { fail("run `openmila-selftest models` first") }
+        models.setSelected(.openaiTurbo)
+
+        let store = RecordingStore(rootDirectory: root)
+        let language = RecordingLanguageSettings(defaults: defaults)
+        language.current = .english
+        let diarization = DiarizationSettings(defaults: defaults)
+        let remote = RemoteTranscriptionSettings(defaults: defaults)
+        remote.backend = .local
+        let transcription = TranscriptionService(store: store, modelManager: models,
+                                                 diarizationSettings: diarization, remoteSettings: remote)
+        let settings = VoiceMemosSettings(defaults: defaults)
+        settings.startDate = Date(timeIntervalSince1970: 0)
+        guard settings.grantFolder(folder) else { fail("could not use folder \(folder.path)") }
+        settings.includeUnfiled = true
+        // Select every subfolder, as a user ticking all of them in Settings would.
+        for sub in (try? VoiceMemosLibrary(recordingsDirectory: folder).folders()) ?? [] {
+            settings.setFolder(sub.uuid, selected: true)
+        }
+        settings.isEnabled = true
+
+        let before = Set(store.recordings.map(\.id))
+        let importer = VoiceMemosImporter(store: store, transcription: transcription,
+                                          settings: settings, languageSettings: language)
+        importer.start()
+        say("watching \(folder.path)")
+        // Files imported by an earlier run are deduplicated, so only new ones count.
+        let known = Set(store.recordings.compactMap(\.voiceMemoUniqueID))
+        let expected = ((try? VoiceMemosLibrary(recordingsDirectory: folder).fetchAllRecordings()) ?? [])
+            .filter { !known.contains($0.uniqueID) }.count
+        say("new files to import: \(expected)")
+        if expected == 0 { say("nothing new; everything in the folder is already imported"); return }
+        guard await waitFor("the import", timeout: 120, { store.recordings.filter { !before.contains($0.id) }.count >= expected }) else {
+            fail("nothing imported: \(importer.lastError ?? "no error reported")")
+        }
+        let added = store.recordings.filter { !before.contains($0.id) }
+        say("imported \(added.count): \(added.map(\.title).joined(separator: ", ")) into folder \"\(added.first?.folder ?? "-")\"")
+        let done = await waitFor("transcription", timeout: 1800, poll: 2) {
+            added.allSatisfy { r in
+                let s = store.recordings.first { $0.id == r.id }?.status
+                return s == .completed || s == .failed
+            }
+        }
+        for r in added {
+            let current = store.recordings.first { $0.id == r.id }
+            say("--- \(r.title): \(current?.status.rawValue ?? "?") (\(String(format: "%.1f", current?.duration ?? 0)) s)")
+            say(current?.fullText.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+        }
+        importer.stop()
+        if !done { exit(1) }
+
+    case "summarize":
+        let store = RecordingStore(rootDirectory: root)
+        guard let target = store.recordings.filter({ $0.deletedAt == nil && $0.status == .completed && !$0.fullText.isEmpty })
+            .max(by: { $0.createdAt < $1.createdAt }) else { fail("no completed recording to summarise") }
+        let llm = LLMSettings(defaults: defaults)
+        llm.tool = .claude
+        llm.summaryEnabled = true
+        let live = LiveAISettings(defaults: defaults)
+        let summarizer = RecordingSummarizer(store: store, llmSettings: llm, liveAISettings: live)
+        say("summarising \"\(target.title)\" with the claude CLI...")
+        summarizer.regenerate(target)
+        _ = await waitFor("the summary", timeout: 300, poll: 2) { !summarizer.isSummarizing(target.id) && (store.recordings.first { $0.id == target.id }?.summary?.isEmpty == false) }
+        let updated = store.recordings.first { $0.id == target.id }
+        say("summary: \(updated?.summary ?? "(none)")")
+        for item in updated?.actionItems ?? [] { say("  action: \(item.text)") }
+        if updated?.summary?.isEmpty != false { exit(1) }
+
+    case "list":
+        let store = RecordingStore(rootDirectory: root)
+        say("store: \(store.recordingsDirectory.path)  recordings: \(store.recordings.count)  folders: \(store.folders)")
+        for r in store.recordings {
+            say("\(r.id)  \(r.status.rawValue)  \(r.title)  summary=\(r.summary == nil ? "no" : "yes")")
+        }
+
+    default:
+        say("usage: openmila-selftest models | import <folder> | summarize | list")
+    }
+}
+
+let done = DispatchSemaphore(value: 0)
+Task { @MainActor in
+    await run()
+    done.signal()
+}
+// Keep the main thread serving the main actor while the task runs.
+while done.wait(timeout: .now()) == .timedOut {
+    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+}
+exit(0)
