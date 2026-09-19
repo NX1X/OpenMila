@@ -37,7 +37,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported privately to the project maintainer, [@NX1X](https://github.com/NX1X), through a GitHub private report on this repository. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported privately to the project maintainer, [@NX1X](https://github.com/NX1X), through a GitHub private report on this repository or the form at [nx1xlab.dev/contact](https://nx1xlab.dev/contact). All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 

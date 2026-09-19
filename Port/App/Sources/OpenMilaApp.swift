@@ -28,11 +28,7 @@ struct OpenMilaApp: App {
                 Button("Stop Recording") { model.stopRecording() }
             }
             CommandMenu("Help") {
-                Button("About \(AppIdentity.name)") {
-                    model.platform.notifier.notify(
-                        title: "\(AppIdentity.name) \(AppIdentity.version)",
-                        body: "A port of Mila \(AppIdentity.upstreamVersion) by Uri Harduf at Island. Not affiliated with Island Technology, Inc.")
-                }
+                Button("About \(AppIdentity.name)") { model.ui.showAbout = true }
             }
         }
     }

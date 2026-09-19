@@ -46,10 +46,8 @@ platform code, not features. The Mila version currently matched is in
 
 - [Installing and using OpenMila](docs/openmila/INSTALL.md)
 - [Using OpenMila with Claude (MCP)](docs/openmila/MCP.md)
-- [Running your own transcription server](docs/REMOTE_TRANSCRIPTION_SERVER.md)
-  and [for a team on Kubernetes](docs/self-hosted-server/README.md): these are
-  Mila's guides, and apply unchanged; the server side does not care which app
-  talks to it.
+- [Remote transcription](docs/openmila/REMOTE_SERVER.md): using your own
+  server, with Mila's server guides and the few app-side differences
 - [Contributing](CONTRIBUTING.md), [Security policy](SECURITY.md),
   [Repository layout](docs/port/LAYOUT.md)
 
@@ -58,6 +56,16 @@ platform code, not features. The Mila version currently matched is in
 Ubuntu 26.04, Swift 6.4.0, whisper.cpp from the pinned submodule. See
 [`ci/README.md`](ci/README.md); `ci/run.sh all` builds and tests everything
 the way CI does.
+
+## Contact
+
+The best way to reach the maintainer is this repository: open an
+[issue](https://github.com/NX1X/OpenMila/issues) for bugs and requests, or a
+[discussion](https://github.com/NX1X/OpenMila/discussions) for questions.
+Security problems go through
+[private vulnerability reporting](https://github.com/NX1X/OpenMila/security/advisories/new).
+For anything else, the contact form and social links are at
+[nx1xlab.dev/contact](https://nx1xlab.dev/contact).
 
 ## License
 

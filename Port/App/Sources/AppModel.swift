@@ -22,8 +22,15 @@ enum AppIdentity {
     static let repository = "NX1X/OpenMila"
 }
 
+/// App-wide UI requests that menus raise and views present.
+@MainActor
+final class UIRequests: ObservableObject {
+    @Published var showAbout = false
+}
+
 @MainActor
 final class AppModel {
+    let ui = UIRequests()
     let platform: PlatformServices
     let store: RecordingStore
     let storageSettings: RecordingStorageSettings

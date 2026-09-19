@@ -34,12 +34,14 @@ struct ContentView: View {
     @State var importer: Observed<MilaConfigImporter>
     @State var whatsNew: WhatsNewUpdate?
     @State var showWhatsNew = false
+    @State var ui: Observed<UIRequests>
 
     init(model: AppModel) {
         self.model = model
         _store = State(wrappedValue: Observed(model.store))
         _transcription = State(wrappedValue: Observed(model.transcription))
         _importer = State(wrappedValue: Observed(model.configImporter))
+        _ui = State(wrappedValue: Observed(model.ui))
     }
 
     var visibleRecordings: [Recording] {
@@ -54,7 +56,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(store: store, section: $section, showSettings: $showSettings)
+            SidebarView(store: store, section: $section, showSettings: $showSettings, ui: ui)
                 .frame(minWidth: Theme.sidebarMinWidth)
         } content: {
             if section == .home {
@@ -77,6 +79,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: Binding(get: { importer.object.pending != nil }, set: { if !$0 { model.configImporter.cancel() } })) {
             MilaConfigConfirmationView(importer: importer)
+        }
+        .sheet(isPresented: Binding(get: { ui.object.showAbout }, set: { ui.object.showAbout = $0 })) {
+            AboutView(isPresented: Binding(get: { ui.object.showAbout }, set: { ui.object.showAbout = $0 }))
         }
         .sheet(isPresented: $showWhatsNew) {
             WhatsNewPopup(update: whatsNew, onUpdate: {
@@ -147,6 +152,7 @@ struct SidebarView: View {
     let store: Observed<RecordingStore>
     @Binding var section: SidebarSection?
     @Binding var showSettings: Bool
+    let ui: Observed<UIRequests>
     @State var showFolderSheet = false
     @State var folderDraft = ""
     @State var renamingFolder: String?
@@ -180,6 +186,7 @@ struct SidebarView: View {
             Divider()
             HStack {
                 Button("Settings") { showSettings = true }
+                Button("About") { ui.object.showAbout = true }
                 Spacer()
                 Text(AppIdentity.version).font(.caption2).foregroundColor(Theme.secondaryText)
             }.padding()

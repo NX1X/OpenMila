@@ -249,9 +249,9 @@ struct SettingsView: View {
             }
             Divider()
             Text("Backend").font(.headline)
-            Picker(of: TranscriptionBackend.allCases.map(\.rawValue), selection: Binding(
-                get: { remote.object.backend.rawValue },
-                set: { if let v = $0, let b = TranscriptionBackend(rawValue: v) { remote.object.backend = b } }))
+            Picker(of: TranscriptionBackend.allCases.map(\.displayName), selection: Binding(
+                get: { remote.object.backend.displayName },
+                set: { name in if let b = TranscriptionBackend.allCases.first(where: { $0.displayName == name }) { remote.object.backend = b } }))
             if remote.object.backend != .local {
                 TextField("Endpoint (https://.../v1)", text: Binding(get: { remote.object.endpoint }, set: { remote.object.endpoint = $0 }))
                 TextField("Model", text: Binding(get: { remote.object.model }, set: { remote.object.model = $0 }))

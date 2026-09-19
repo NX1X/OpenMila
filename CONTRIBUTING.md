@@ -53,6 +53,11 @@ Use the issue templates. Attach the diagnostic report (Settings > General >
 Export diagnostic report) or the log file it points to. For security
 problems follow [SECURITY.md](SECURITY.md) instead.
 
+## Contact
+
+Issues and discussions on this repository are the best way to reach the
+maintainer. Otherwise, use [nx1xlab.dev/contact](https://nx1xlab.dev/contact).
+
 ## License
 
 By contributing you agree that your contributions are licensed under the
