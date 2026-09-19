@@ -1,0 +1,75 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests",
+    "docker:pinDigests"
+  ],
+  "description": "OpenMila dependency policy: 14-day cooldown, exact pins, digests for actions and images, no automerge. Upstream-owned files are left to upstream.",
+  "timezone": "Asia/Jerusalem",
+  "schedule": ["before 6am on monday"],
+  "minimumReleaseAge": "14 days",
+  "internalChecksFilter": "strict",
+  "automerge": false,
+  "rangeStrategy": "pin",
+  "prConcurrentLimit": 5,
+  "labels": ["dependencies"],
+  "enabledManagers": ["swift", "github-actions", "dockerfile", "custom.regex"],
+  "ignorePaths": [
+    "docker/**",
+    "docs/**",
+    "Packages/TranscriptionCore/vendor/**",
+    ".github/workflows/ci.yml",
+    ".github/workflows/codeql.yml",
+    ".github/workflows/scorecard.yml",
+    ".github/workflows/debug-mac-runner.yml",
+    ".github/workflows/e2e-hebrew-remote.yml",
+    ".github/workflows/require-linked-issue.yml",
+    ".github/workflows/ios-tests.yml",
+    ".github/workflows/llm-live-ai-e2e.yml",
+    ".github/workflows/e2e-diarization.yml",
+    ".github/workflows/e2e-remote-transcription.yml",
+    ".github/workflows/build-speaches-image.yml",
+    ".github/workflows/e2e-transcription.yml",
+    ".github/workflows/audio-loopback-e2e.yml",
+    "Port/Spikes/**"
+  ],
+  "git-submodules": { "enabled": false },
+  "packageRules": [
+    {
+      "description": "Group every non-major update into one weekly PR.",
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "groupName": "non-major dependencies"
+    },
+    {
+      "description": "Majors stay separate and always need a human.",
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "major"]
+    },
+    {
+      "description": "Engine pins follow Mila upstream, never Renovate.",
+      "matchPackageNames": ["whisper.cpp", "pyannote.audio", "torch", "torchaudio"],
+      "enabled": false
+    },
+    {
+      "description": "Swift toolchain in ci/Dockerfile is bumped by hand together with scripts/port/env.sh.",
+      "matchFileNames": ["ci/Dockerfile"],
+      "matchDepNames": ["swift"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Swift toolchain version in ci/Dockerfile, tracked for visibility only (rule above disables PRs).",
+      "managerFilePatterns": ["/^ci/Dockerfile$/"],
+      "matchStrings": ["ARG SWIFT_VERSION=(?<currentValue>[0-9.]+)"],
+      "depNameTemplate": "swift",
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "swiftlang/swift",
+      "extractVersionTemplate": "^swift-(?<version>[0-9.]+)-RELEASE$"
+    }
+  ]
+}
