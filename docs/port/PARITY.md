@@ -17,7 +17,10 @@ Status values, and what each one claims:
 | **n/a** | Apple-only mechanism with no equivalent, or nothing to do. |
 
 Linux is the development platform (Ubuntu 26.04, GNOME/Wayland, no GPU), so its
-evidence is direct. Windows work is behind it by design.
+evidence is direct. Windows is built and tested on a `windows-2025` runner in
+CI - core, CLI, MCP helper, the port's tests, the WinUI app and the portable
+zip all pass there - but no Windows row is **done**, because nobody has run any
+of it on a Windows desktop yet.
 
 ## Recording and capture
 
@@ -54,7 +57,7 @@ evidence is direct. Windows work is behind it by design.
 | 24 | Remote transcription on any OpenAI-compatible endpoint | done - upstream code with the port's `SecretStore`; exercised against `scripts/mock-openai-transcription-server.py` | written |
 | 25 | Neural VAD (Silero) and hallucination reduction | done - `TranscriptionCore` as-is, weights bundled | written |
 | 26 | Live transcription while recording, mic and app audio | done | written |
-| 27 | Live transcript editing, copy, mid-recording SRT export | done - `Port/App/Sources/Views` | planned - the app has no Windows build yet |
+| 27 | Live transcript editing, copy, mid-recording SRT export | done - `Port/App/Sources/Views` | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 | 28 | Hardware gate for Live AI on weak machines | done - `SystemCapabilities` twin reads RAM and `activeProcessorCount` | written |
 | 29 | Transcription queue with no stuck items after relaunch | done - upstream `TranscriptionService` | written |
 | 30 | Re-transcribe a recording, speaker names re-attached | done | written |
@@ -67,8 +70,8 @@ evidence is direct. Windows work is behind it by design.
 |---|---|---|---|
 | 33 | Speaker diarization with pyannote, bundled Python runtime, torch on first enable | done - `diarization/build-bundle-linux.sh`, proven by `openmila-selftest diarize` (torch 2.2.2 installed at runtime, turns returned) | written - `build-bundle-windows.ps1` has never been run |
 | 34 | Live speaker labels during recording | done - upstream `LiveSpeakerDiarizer` | written |
-| 35 | A colour per speaker | done - port theme palette | planned |
-| 36 | Speaker directory: name, rename, merge, un-name, naming mid-recording | done | planned - needs the app |
+| 35 | A colour per speaker | done - port theme palette | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
+| 36 | Speaker directory: name, rename, merge, un-name, naming mid-recording | done | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 | 37 | Cross-recording voice recognition, opt-in, deletable | done - upstream `OfflineVoiceEmbedder`, `SpeakerProfileStore` | written |
 | 38 | Diarization toggle mid-recording takes effect immediately | done | written |
 
@@ -77,7 +80,7 @@ evidence is direct. Windows work is behind it by design.
 | # | Feature | Linux | Windows |
 |---|---|---|---|
 | 39 | Global hotkeys for English and Hebrew, configurable, conflict-checked | partial - X11 `XGrabKey`; the XDG `GlobalShortcuts` portal path (needed on Wayland) is not written | written - `RegisterHotKey` on a dedicated message thread |
-| 40 | Dictation overlay pill with live text, level and busy state | done - app window; no layer-shell, so it is an ordinary always-on-top window | planned |
+| 40 | Dictation overlay pill with live text, level and busy state | done - app window; no layer-shell, so it is an ordinary always-on-top window | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 | 41 | Paste at the cursor into the previous app, with clipboard fallback | partial - `wl-copy`/`xclip` plus `wtype`/`xdotool`; no `RemoteDesktop` portal path, so a bare Wayland session falls back to the clipboard | written - clipboard plus `SendInput` Ctrl+V |
 | 42 | Dictations saved under History | done | written |
 
@@ -90,35 +93,35 @@ evidence is direct. Windows work is behind it by design.
 | 45 | Suggested recording names | done | written |
 | 46 | Automatic summary after each recording, backfill, regenerate, `.summary.txt` | done | written |
 | 47 | Send to LLM with a custom prompt | done | written |
-| 48 | Live AI rolling summary and action items with a per-recording context box | done | planned - needs the app |
-| 49 | AI output language, per-feature prompts with an undo stack | done | planned - needs the app |
+| 48 | Live AI rolling summary and action items with a per-recording context box | done | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
+| 49 | AI output language, per-feature prompts with an undo stack | done | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 | 50 | Every CLI invocation logged with credentials redacted | done - `OpenMilaLogging` redacts unless `OPENMILA_LOG_PRIVATE=1` | written |
 
 ## Library and UI
 
 | # | Feature | Linux | Windows |
 |---|---|---|---|
-| 51 | Sidebar: Home, All Transcriptions, folders with drag-and-drop, Dictations, watched folders, Recently Deleted | done - SwiftCrossUI + GTK4 | planned |
-| 52 | Detail view: playback, click to seek, 0.5x-2x speed, transcript follows playback | done - speed goes through a WSOLA time stretcher, so pitch is preserved (`StretchTests`); the stretched audio also transcribes to the same words at 0.75x and 1.5x, which is the intelligibility check a frequency test cannot give | planned |
-| 53 | Post-recording popup and rename sheet with summary and action items | done | planned |
-| 54 | Right-click context menu on recordings | done - GTK `GtkPopover` via a button-3 gesture | planned |
+| 51 | Sidebar: Home, All Transcriptions, folders with drag-and-drop, Dictations, watched folders, Recently Deleted | done - SwiftCrossUI + GTK4 | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
+| 52 | Detail view: playback, click to seek, 0.5x-2x speed, transcript follows playback | done - speed goes through a WSOLA time stretcher, so pitch is preserved (`StretchTests`); the stretched audio also transcribes to the same words at 0.75x and 1.5x, which is the intelligibility check a frequency test cannot give | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
+| 53 | Post-recording popup and rename sheet with summary and action items | done | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
+| 54 | Right-click context menu on recordings | done - GTK `GtkPopover` via a button-3 gesture | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 | 55 | Copy and share transcript with speaker labels, SRT export, timestamps | done | written - core only |
-| 56 | Hebrew RTL rendering per section | done - Pango handles bidi; direction decided per block by upstream's `HebrewDetection` | planned |
-| 57 | Hide recents toggle | done | planned |
-| 58 | Settings with all nine sections | done | planned |
-| 59 | "What's New" before an update | done - notes from the GitHub release body | planned |
-| 60 | Main menu commands and keyboard shortcuts | partial - the app's own shortcuts; no menu bar on GNOME | planned |
+| 56 | Hebrew RTL rendering per section | done - Pango handles bidi; direction decided per block by upstream's `HebrewDetection` | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
+| 57 | Hide recents toggle | done | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
+| 58 | Settings with all nine sections | done | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
+| 59 | "What's New" before an update | done - notes from the GitHub release body | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
+| 60 | Main menu commands and keyboard shortcuts | partial - the app's own shortcuts; no menu bar on GNOME | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 | 61 | Diagnostic report export, credentials redacted, logs attached | done - `DiagnosticSnapshotProvider` twin over the port's own log files | written |
-| 62 | Sidebar material chrome | partial - layered translucent surfaces approximate `.regularMaterial`; no blur | planned |
+| 62 | Sidebar material chrome | partial - layered translucent surfaces approximate `.regularMaterial`; no blur | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 
 ## Integrations
 
 | # | Feature | Linux | Windows |
 |---|---|---|---|
 | 63 | iPhone Voice Memos sync | done as watched folders - the same start-date and destination rules over any synced directory (iCloud discovery is macOS-only); inotify watcher, per-folder toggles | written - `ReadDirectoryChangesW` |
-| 64 | `.milaconfig` one-click team setup | partial - in-app import works; no `.desktop` MIME association yet | planned |
+| 64 | `.milaconfig` one-click team setup | partial - in-app import works; no `.desktop` MIME association yet | partial - the app reads a path from argv; no file association yet |
 | 65 | Obsidian export and vault git sync | done - `git` from PATH | written |
-| 66 | MCP server with the consent gate | done - `openmila-mcp` through Claude Code: refused with consent off, listed recordings with it on | written - builds in CI once the Windows job is green |
+| 66 | MCP server with the consent gate | done - `openmila-mcp` through Claude Code: refused with consent off, listed recordings with it on | written - builds and ships in the Windows zip; nothing has run it there |
 | 67 | Self-hosted server docs | done - `docs/self-hosted-server`, `docs/openmila/REMOTE_SERVER.md` | done - same docs |
 
 ## Updates, permissions, system
