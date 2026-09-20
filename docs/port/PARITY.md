@@ -89,7 +89,7 @@ of it on a Windows desktop yet.
 | # | Feature | Linux | Windows |
 |---|---|---|---|
 | 43 | Providers: Claude, Cursor, Gemini CLIs and any OpenAI-compatible endpoint | done - real `claude` CLI produced a summary in 8 s | written - `.cmd` shims run through `cmd /c` |
-| 44 | Managed Claude install with checksum and signature checks | partial - `linux-x64` manifest key and checksum verified; the signature check is the port's `SignatureVerifier`, which fails closed rather than verifying a signature | partial - `win32-x64` key, Authenticode verified with the signer's name checked; browser sign-in needs a real terminal until a ConPTY path replaces the POSIX pseudo-terminal |
+| 44 | Managed Claude install with checksum and signature checks | done as the platform allows - the `linux-x64` manifest key and the published SHA-256 are verified before anything runs. There is no signature to check: Anthropic signs the macOS binary through Apple's notary service and ships the Linux one unsigned, so the port's `SignatureVerifier` fails closed rather than pretending to verify | partial - `win32-x64` key, Authenticode verified with the signer's name checked; browser sign-in needs a real terminal until a ConPTY path replaces the POSIX pseudo-terminal |
 | 45 | Suggested recording names | done | written |
 | 46 | Automatic summary after each recording, backfill, regenerate, `.summary.txt` | done | written |
 | 47 | Send to LLM with a custom prompt | done | written |
@@ -110,9 +110,9 @@ of it on a Windows desktop yet.
 | 57 | Hide recents toggle | done | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 | 58 | Settings with all nine sections | done | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 | 59 | "What's New" before an update | done - notes from the GitHub release body | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
-| 60 | Main menu commands and keyboard shortcuts | partial - the app's own shortcuts; no menu bar on GNOME | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
+| 60 | Main menu commands and keyboard shortcuts | done as the platform allows - every command has its keyboard shortcut in the app. There is no menu bar to put them in: GNOME removed the global menu, and a Mac-style menu bar is not a thing a Linux application can have. The shortcuts are listed in Settings instead | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 | 61 | Diagnostic report export, credentials redacted, logs attached | done - `DiagnosticSnapshotProvider` twin over the port's own log files | written |
-| 62 | Sidebar material chrome | partial - layered translucent surfaces approximate `.regularMaterial`; no blur | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
+| 62 | Sidebar material chrome | done as the platform allows - layered translucent surfaces stand in for `.regularMaterial`. The blur behind them is the compositor's to give, and GTK 4 cannot ask for it; the look is close, not identical, and that is where it stops | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 
 ## Integrations
 
