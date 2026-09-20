@@ -192,7 +192,8 @@ case "inhibit":
     print("released")
 
 case "hotkey":
-    guard let hotkeys = host.hotkeys else { fail("this system has no global hotkeys (on Linux: no X11 display)") }
+    guard let hotkeys = host.hotkeys else { fail("this system offers no global shortcuts: no X display, and no desktop portal that implements GlobalShortcuts") }
+    print("backend: \(type(of: hotkeys))")
     let chord = HotkeyChord(key: option("--key", in: args) ?? "2", modifiers: [.control, .alt])
     let result = await hotkeys.register(id: "test", chord: chord) { print("pressed \(chord.displayName)") }
     print("register \(chord.displayName): \(result). Waiting 15s for presses...")
