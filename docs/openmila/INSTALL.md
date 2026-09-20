@@ -44,6 +44,13 @@ checked against a pinned SHA-256 before it is used.
 The data folder is named `Mila` on purpose: the MCP helper and other shared
 code look for it by that name.
 
+### Speaker diarization
+
+Naming who said what needs a Python runtime, which the packages ship when it
+has been built (`diarization/build-bundle-linux.sh`). The first time you turn
+diarization on, the app downloads PyTorch for the CPU, about 200 MB. It is off
+by default, as it is in Mila.
+
 ### Dictation hotkeys
 
 Ctrl+Alt+2 dictates English and Ctrl+Alt+3 Hebrew (change them in
@@ -60,7 +67,28 @@ source. Recording a single application is planned.
 
 ## Windows
 
-Not yet released. Windows 11 support is being built next.
+Windows 11 (and Windows 10 22H2) on x64.
+
+1. Download `OpenMila-<version>-win64.zip` from
+   [OpenMila.nx1xlab.dev](https://openmila.nx1xlab.dev) or the
+   [releases page](https://github.com/NX1X/OpenMila/releases), and check it
+   against the `.sha256` file beside it:
+   ```powershell
+   (Get-FileHash OpenMila-<version>-win64.zip -Algorithm SHA256).Hash
+   ```
+2. Unblock and extract it, then run `openmila.exe`. Nothing else is needed:
+   the Swift runtime and the transcription engine travel with the app.
+
+Where things are on Windows:
+
+| What | Where |
+|---|---|
+| Recordings, transcripts, models | `%APPDATA%\Mila\` |
+| Logs | `%LOCALAPPDATA%\OpenMila\logs\openmila.log` |
+| Secrets (API keys, tokens) | `%APPDATA%\Mila\secrets\`, encrypted with DPAPI for your Windows account |
+
+Dictation hotkeys work everywhere on Windows, and dictated text is pasted
+into whichever window has focus.
 
 ## macOS
 
