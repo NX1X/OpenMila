@@ -6,6 +6,7 @@
 //   openmila-selftest models            download the English model (large-v3-turbo) via ModelManager
 //   openmila-selftest import <dir>      watched-folder import of <dir>, then transcription
 //   openmila-selftest summarize         summarise the newest recording with the configured `claude` CLI
+//   openmila-selftest diarize <file>    install torch if needed, then label speakers
 //   openmila-selftest list              show the store
 //
 // Settings the tests need are kept in a private UserDefaults suite, so the
@@ -144,6 +145,40 @@ func run() async {
         for item in updated?.actionItems ?? [] { say("  action: \(item.text)") }
         if updated?.summary?.isEmpty != false { exit(1) }
 
+    case "diarize":
+        guard args.count >= 2 else { fail("usage: openmila-selftest diarize <file.wav>") }
+        let audio = URL(fileURLWithPath: args[1])
+        let settings = DiarizationSettings(defaults: defaults)
+        settings.isEnabled = true
+        let python = SpeakerDiarizer.resolvePython(userConfigured: settings.pythonPath)
+        say("python: \(python)")
+        guard python.contains("PythonRuntime") else {
+            fail("no bundled runtime found; run diarization/build-bundle-linux.sh and link it beside the binary")
+        }
+        let bootstrap = DiarizationBootstrap(bundledPython: python)
+        bootstrap.refreshReadyState()
+        if !bootstrap.isReady {
+            say("installing torch \(DiarizationBootstrap.torchVersion) into the user site-packages (about 200 MB)...")
+            await bootstrap.bootstrapIfNeeded()
+            say("bootstrap stage: \(bootstrap.stage)")
+        }
+        guard bootstrap.isReady else { fail("torch did not install: \(bootstrap.stage)") }
+        say("verifying the pipeline...")
+        let verification = try? await SpeakerDiarizer.verifySetup(pythonPath: python)
+        say("verify: \(verification.map { String(describing: $0) } ?? "no result")")
+        say("diarizing \(audio.lastPathComponent)...")
+        let turns: [SpeakerTurn]
+        do {
+            turns = try await SpeakerDiarizer.diarize(wavURL: audio, pythonPath: python)
+        } catch {
+            fail("diarization failed: \(error.localizedDescription)")
+        }
+        if turns.isEmpty { say("no speaker turns returned") } 
+        for turn in turns {
+            say(String(format: "  %6.2f - %6.2f  %@", turn.start, turn.end, turn.speaker))
+        }
+        if turns.isEmpty { exit(1) }
+
     case "list":
         let store = RecordingStore(rootDirectory: root)
         say("store: \(store.recordingsDirectory.path)  recordings: \(store.recordings.count)  folders: \(store.folders)")
@@ -152,7 +187,7 @@ func run() async {
         }
 
     default:
-        say("usage: openmila-selftest models | import <folder> | summarize | list")
+        say("usage: openmila-selftest models | import <folder> | summarize | diarize <file> | list")
     }
 }
 

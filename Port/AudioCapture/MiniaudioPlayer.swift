@@ -6,9 +6,10 @@ import Foundation
 /// Plays a recording through the default output. Upstream: `AVPlayer` in the
 /// detail view, with the 1.9.5 speed control.
 ///
-/// Rate changes are done by resampling, which also shifts pitch. Upstream
-/// keeps voices at their natural pitch at every speed; that needs a
-/// time-stretch stage (planned: signalsmith-stretch) in front of this player.
+/// Rate changes go through the WSOLA time stretcher in `om_stretch.c`, so a
+/// voice keeps its pitch at every speed, as upstream's AVAudioUnitTimePitch
+/// does. `StretchTests` pins both halves of that: the duration scales and the
+/// frequency does not move.
 public final class MiniaudioPlayer: @unchecked Sendable {
     public enum Error: Swift.Error, LocalizedError {
         case openFailed(String)

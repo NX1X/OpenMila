@@ -1,3 +1,4 @@
+// Modified by NX1X for OpenMila; see CHANGES.md.
 import Foundation
 
 /// Orchestrates the first-launch download + install of the torch wheel into a
@@ -29,10 +30,27 @@ final class DiarizationBootstrap: ObservableObject {
     /// uses torchaudio for audio I/O (`torchaudio.list_audio_backends()`,
     /// `torchaudio.load()`), so installing only torch produces a broken
     /// pipeline with a confusing `missing_torchaudio` health-check code.
-    static let wheelURLs: [URL] = [
-        URL(string: "https://download.pytorch.org/whl/cpu/torch-\(torchVersion)-cp311-none-macosx_11_0_arm64.whl")!,
-        URL(string: "https://download.pytorch.org/whl/cpu/torchaudio-\(torchaudioVersion)-cp311-cp311-macosx_11_0_arm64.whl")!,
-    ]
+    static let wheelURLs: [URL] = {
+        // The CPU wheels for this platform's bundled CPython 3.11. The macOS
+        // list is upstream's; the others are the same PyTorch build for the
+        // corresponding platform tag.
+        #if os(Linux)
+        return [
+            URL(string: "https://download.pytorch.org/whl/cpu/torch-\(torchVersion)%2Bcpu-cp311-cp311-linux_x86_64.whl")!,
+            URL(string: "https://download.pytorch.org/whl/cpu/torchaudio-\(torchaudioVersion)%2Bcpu-cp311-cp311-linux_x86_64.whl")!,
+        ]
+        #elseif os(Windows)
+        return [
+            URL(string: "https://download.pytorch.org/whl/cpu/torch-\(torchVersion)%2Bcpu-cp311-cp311-win_amd64.whl")!,
+            URL(string: "https://download.pytorch.org/whl/cpu/torchaudio-\(torchaudioVersion)%2Bcpu-cp311-cp311-win_amd64.whl")!,
+        ]
+        #else
+        return [
+            URL(string: "https://download.pytorch.org/whl/cpu/torch-\(torchVersion)-cp311-none-macosx_11_0_arm64.whl")!,
+            URL(string: "https://download.pytorch.org/whl/cpu/torchaudio-\(torchaudioVersion)-cp311-cp311-macosx_11_0_arm64.whl")!,
+        ]
+        #endif
+    }()
 
     /// Extra PyPI specs to install into the user-writable site-packages
     /// after the wheels download. These don't have a fixed wheel URL we
@@ -381,6 +399,12 @@ final class DiarizationBootstrap: ObservableObject {
     /// the interpreter was itself ad-hoc, so library validation never kicked
     /// in; that's why this regressed only once releases became notarized.)
     private func signFreshDylibs() async throws {
+        #if !os(macOS)
+        // Ad-hoc code signing is a macOS requirement (and `codesign` exists
+        // only there); Linux and Windows load the freshly written libraries
+        // as they are.
+        return
+        #else
         // Sign both torch/ and torchaudio/ — torch ships most of the
         // dylibs (~90 MB) but torchaudio has a handful of its own.
         let candidates = ["torch", "torchaudio"]
@@ -408,6 +432,7 @@ final class DiarizationBootstrap: ObservableObject {
             // Non-fatal: ad-hoc signing failures don't block functionality on
             // current macOS. If it ever does, we'll catch it at the diarize call.
         }.value
+        #endif
     }
 }
 

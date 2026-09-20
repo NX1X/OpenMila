@@ -37,6 +37,14 @@ for entry in ConnectionTestSample.wav ggml-silero-v5.1.2.bin DiarizationModels; 
   cp -r "$ROOT/Mila/Resources/$entry" "$APPDIR/usr/bin/"
 done
 cp "$WHISPER"/lib/libwhisper.so* "$WHISPER"/lib/libggml*.so* "$APPDIR/usr/lib/"
+# Speaker diarization: the Python runtime goes beside the binaries, where
+# Bundle.main looks for it. Built by diarization/build-bundle-linux.sh; when it
+# has not been built, the app simply reports diarization as unavailable.
+if [ -d "$ROOT/diarization/out/PythonRuntime" ]; then
+  cp -r "$ROOT/diarization/out/PythonRuntime" "$APPDIR/usr/bin/"
+else
+  echo "note: no diarization/out/PythonRuntime; the AppImage will ship without speaker diarization" >&2
+fi
 # Swift runtime: only what the binaries load.
 for bin in "$APPDIR"/usr/bin/openmila "$APPDIR"/usr/bin/openmila-cli "$APPDIR"/usr/bin/openmila-mcp; do
   ldd "$bin" | awk '/=> \// {print $3}' | grep -E "swift-6|/swift/linux/" || true

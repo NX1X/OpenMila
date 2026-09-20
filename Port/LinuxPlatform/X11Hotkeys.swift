@@ -1,4 +1,9 @@
 // Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
+//
+// Linux only: this module is the Linux platform layer, and SwiftPM
+// builds every target in the package on every OS, including a Windows
+// `swift test`.
+#if os(Linux)
 
 import CX11
 import Foundation
@@ -173,3 +178,4 @@ public final class X11Hotkeys: GlobalHotkeys, @unchecked Sendable {
         XCloseDisplay(display)
     }
 }
+#endif

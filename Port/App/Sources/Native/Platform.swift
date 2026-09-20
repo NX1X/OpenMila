@@ -25,7 +25,7 @@ enum AppIcon {
     static let sparkles = "starred-symbolic"                  // sparkles
 }
 
-#if !canImport(GtkBackend)
+#if !os(Linux)
 struct ContextMenuItem {
     let title: String
     let isDestructive: Bool
@@ -44,7 +44,7 @@ struct PlatformIcon: View {
     init(_ name: String) { self.name = name }
 
     var body: some View {
-        #if canImport(GtkBackend)
+        #if os(Linux)
         SystemIcon(name: name)
         #else
         EmptyView()
@@ -54,7 +54,7 @@ struct PlatformIcon: View {
 
 extension View {
     func platformContextMenu(_ items: [ContextMenuItem]) -> some View {
-        #if canImport(GtkBackend)
+        #if os(Linux)
         return contextMenu(items)
         #else
         return self
@@ -62,7 +62,7 @@ extension View {
     }
 
     func platformDragSource(_ id: UUID) -> some View {
-        #if canImport(GtkBackend)
+        #if os(Linux)
         return recordingDragSource(id)
         #else
         return self
@@ -71,7 +71,7 @@ extension View {
 
     @ViewBuilder
     func platformDropTarget(enabled: Bool, _ onDrop: @escaping (UUID) -> Void) -> some View {
-        #if canImport(GtkBackend)
+        #if os(Linux)
         if enabled { recordingDropTarget(onDrop) } else { self }
         #else
         self

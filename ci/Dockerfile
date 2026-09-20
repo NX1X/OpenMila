@@ -20,11 +20,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends \
-      ca-certificates curl gnupg git cmake make gcc g++ pkg-config unzip ffmpeg \
+      ca-certificates curl gnupg git cmake make gcc g++ pkg-config unzip ffmpeg python3 file zip \
       binutils libc6-dev libcurl4-openssl-dev libedit2 libncurses-dev libpython3-dev \
       libsqlite3-0 libxml2-dev libz3-dev tzdata zlib1g-dev \
       libgtk-4-dev libadwaita-1-dev libpipewire-0.3-dev libsecret-1-dev libdbus-1-dev \
-      libvulkan-dev glslc \
+      libvulkan-dev glslc libx11-dev \
  && rm -rf /var/lib/apt/lists/*
 
 COPY swift-6.x-release-signing-key.asc /tmp/swift-signing-key.asc

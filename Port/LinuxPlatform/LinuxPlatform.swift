@@ -1,4 +1,9 @@
 // Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
+//
+// Linux only: this module is the Linux platform layer, and SwiftPM
+// builds every target in the package on every OS, including a Windows
+// `swift test`.
+#if os(Linux)
 
 import AudioCapture
 import Foundation
@@ -14,10 +19,10 @@ public enum LinuxPlatform {
         let notifier = LinuxNotifier()
         return PlatformServices(
             microphone: MiniaudioMicrophone(),
-            appAudio: MiniaudioSystemLoopback(),
+            appAudio: LinuxAppAudioCapture(),
             hotkeys: X11Hotkeys.isAvailable ? try? X11Hotkeys() : nil,
             textInjector: LinuxTextInjector(notifier: notifier),
-            secrets: FileSecretStore(directory: paths.dataDirectory.appendingPathComponent("secrets", isDirectory: true)),
+            secrets: LinuxSecretStore(fallbackDirectory: paths.dataDirectory.appendingPathComponent("secrets", isDirectory: true)),
             sleep: LinuxSleepInhibitor(),
             paths: paths,
             updater: GitHubReleasesUpdater(repository: repository, currentVersion: appVersion),
@@ -35,3 +40,4 @@ public struct FailClosedBinaryTrust: BinaryTrust {
     public init() {}
     public func isTrusted(executable: URL, expectedPublisher: String) -> Bool { false }
 }
+#endif

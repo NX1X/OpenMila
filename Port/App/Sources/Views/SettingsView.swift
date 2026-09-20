@@ -33,6 +33,8 @@ struct SettingsView: View {
     @Environment(\.chooseFile) var chooseFile
     @State var betaUpdates = UserDefaults.standard.bool(forKey: "updates.betaChannel")
     @State var updateStatus = ""
+    /// The update a check found, so the Install button knows what to fetch.
+    @State var pendingUpdate: AvailableUpdate?
     @State var devices: [AudioInputDevice] = []
     @State var deviceName: String? = "System default"
     @State var storageGB = 0.0
@@ -165,9 +167,31 @@ struct SettingsView: View {
                     Task {
                         do {
                             if let u = try await model.platform.updater?.check(includePrereleases: betaUpdates) {
+                                pendingUpdate = u
                                 updateStatus = "Version \(u.version) is available: \(u.downloadPage)"
-                            } else { updateStatus = "You are up to date." }
+                            } else {
+                                pendingUpdate = nil
+                                updateStatus = "You are up to date."
+                            }
                         } catch { updateStatus = "Check failed: \(error.localizedDescription)" }
+                    }
+                }
+                if let update = pendingUpdate {
+                    Button("Install \(update.version)") {
+                        updateStatus = "Downloading \(update.version)..."
+                        Task {
+                            do {
+                                switch try await model.platform.updater?.install(update) {
+                                case .installed:
+                                    pendingUpdate = nil
+                                    updateStatus = "Version \(update.version) is installed. Quit and start OpenMila again to use it."
+                                case .manual(let page):
+                                    updateStatus = "This installation updates through its package: \(page)"
+                                case nil:
+                                    updateStatus = "No updater on this system."
+                                }
+                            } catch { updateStatus = "Install failed: \(error.localizedDescription)" }
+                        }
                     }
                 }
                 Text(updateStatus).font(.caption)

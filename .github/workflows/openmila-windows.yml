@@ -1,0 +1,123 @@
+# Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
+#
+# OpenMila's Windows build. Dagger runs the Linux pipeline in a container;
+# Windows cannot be containerised on a Linux runner, so this job builds
+# natively on a Windows runner with the same pinned toolchain and the same
+# whisper.cpp commit.
+#
+# It runs only on Windows-related branches and on request, so Windows runner
+# minutes (billed at four times the Linux rate on private repositories) are
+# spent deliberately.
+name: OpenMila Windows
+
+on:
+  push:
+    branches: ["port/stage4-windows", "port/windows**"]
+    paths-ignore: ["docs/**", "docs-internal/**", "**/*.md"]
+  workflow_dispatch:
+    inputs:
+      diarization:
+        description: "Also build the diarization Python runtime (slow, ~2 GB of downloads)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openmila-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SWIFT_VERSION: "6.4.0"
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Cache the Swift toolchain
+        id: swift-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: C:\Users\runneradmin\AppData\Local\Programs\Swift
+          key: swift-${{ env.SWIFT_VERSION }}-windows
+
+      - name: Install Swift (Authenticode verified)
+        if: steps.swift-cache.outputs.cache-hit != 'true'
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://download.swift.org/swift-$env:SWIFT_VERSION-release/windows10/swift-$env:SWIFT_VERSION-RELEASE/swift-$env:SWIFT_VERSION-RELEASE-windows10.exe"
+          $installer = "$env:RUNNER_TEMP\swift-installer.exe"
+          curl.exe -fsSL --retry 4 -o $installer $url
+          # swift.org publishes no detached signature for the Windows installer;
+          # it is Authenticode signed instead. Refuse anything not signed by
+          # Apple, so a tampered download cannot install itself.
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne "Valid") { throw "installer signature is $($signature.Status)" }
+          if ($signature.SignerCertificate.Subject -notmatch "Apple") { throw "unexpected signer: $($signature.SignerCertificate.Subject)" }
+          Write-Host "signed by: $($signature.SignerCertificate.Subject)"
+          Start-Process -FilePath $installer -ArgumentList "/quiet" -Wait
+
+      - name: Put Swift on PATH
+        run: |
+          $swift = "C:\Users\runneradmin\AppData\Local\Programs\Swift\Toolchains\$env:SWIFT_VERSION+Asserts\usr\bin"
+          if (-not (Test-Path $swift)) { $swift = (Get-ChildItem "C:\Users\runneradmin\AppData\Local\Programs\Swift\Toolchains" | Select-Object -First 1).FullName + "\usr\bin" }
+          echo $swift | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $runtime = "C:\Users\runneradmin\AppData\Local\Programs\Swift\Runtimes\$env:SWIFT_VERSION\usr\bin"
+          echo $runtime | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Cache the whisper.cpp build
+        id: whisper-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}\whisper-prefix
+          key: whisper-windows-${{ hashFiles('.github/whisper-cpp-pin.txt') }}
+
+      - name: Build whisper.cpp at the pinned commit
+        if: steps.whisper-cache.outputs.cache-hit != 'true'
+        run: .\scripts\port\build-whisper.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix"
+
+      - name: Build the core, the CLI and the MCP helper
+        run: .\scripts\port\build-windows.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix"
+
+      - name: Run the port's tests
+        run: .\scripts\port\build-windows.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -Test
+
+      # Off by default: the runtime is about 2 GB of wheels, which is not worth
+      # downloading on every push. Run the workflow by hand with the input set
+      # when the bundle script or its pins change.
+      - name: Build the diarization Python runtime
+        if: inputs.diarization
+        run: .\diarization\build-bundle-windows.ps1
+
+      - name: Build the desktop app
+        run: .\scripts\port\build-windows.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -App
+
+      - name: Package the portable zip
+        run: .\packaging\windows\package.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -Configuration debug
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: openmila-windows-zip
+          path: dist/*.zip
+          if-no-files-found: error
+
+      - name: Upload the build log on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-build-log
+          path: ${{ github.workspace }}\build-windows.log
+          if-no-files-found: ignore

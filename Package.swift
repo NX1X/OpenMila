@@ -19,7 +19,17 @@
 // OpenCombine is ever rebuilt with a stale Combine module on disk, clean first
 // (`swift package clean`). They must never be declared on macOS, where
 // they would shadow the real frameworks.
+import Foundation
 import PackageDescription
+
+/// Keeps only the paths this checkout actually has. SwiftPM warns about an
+/// exclude that does not exist, and some of these are deliberately absent -
+/// `CLAUDE.md` and `docs-internal` are gitignored, so a CI checkout has
+/// neither, and every build there printed a warning per missing path.
+func existing(_ paths: [String]) -> [String] {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
+    return paths.filter { FileManager.default.fileExists(atPath: "\(root)/\($0)") }
+}
 
 #if os(macOS)
 #error("Build OpenMila's macOS variant from upstream's project.yml; this manifest targets Linux and Windows.")
@@ -37,6 +47,7 @@ let package = Package(
             "PlatformKit", "AudioCapture", "Recording", "Updater", "Dictation",
         ]),
         .library(name: "OpenMilaLinux", targets: ["LinuxPlatform"]),
+        .library(name: "OpenMilaWindows", targets: ["WindowsPlatform"]),
     ],
     dependencies: [
         .package(path: "Packages/MilaKit"),
@@ -46,7 +57,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log.git", exact: "1.15.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.2"),
         // The MCP helper's SDK, pinned exactly as upstream's project.yml pins it.
-        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
     ],
     targets: [
         // MARK: Shims (Apple module names, open-source implementations)
@@ -81,7 +91,15 @@ let package = Package(
         .target(
             name: "CMiniaudio",
             path: "Port/CMiniaudio",
-            cSettings: [.define("MA_NO_RUNTIME_LINKING", .when(platforms: [.windows]))],
+            cSettings: [
+                .define("MA_NO_RUNTIME_LINKING", .when(platforms: [.windows])),
+                // Without runtime linking miniaudio compiles each backend it
+                // supports, and its JACK backend needs jack/jack.h, which the
+                // Windows SDK does not ship. WASAPI is the backend Windows
+                // uses; JACK stays available on Linux, where it is loaded at
+                // runtime and needs no header.
+                .define("MA_NO_JACK", .when(platforms: [.windows])),
+            ],
             linkerSettings: [
                 .linkedLibrary("dl", .when(platforms: [.linux])),
                 .linkedLibrary("m", .when(platforms: [.linux])),
@@ -90,7 +108,11 @@ let package = Package(
         ),
         .target(name: "AudioCapture", dependencies: ["CMiniaudio", "PlatformKit"], path: "Port/AudioCapture"),
         .target(name: "Recording", dependencies: ["PlatformKit"], path: "Port/Recording"),
-        .target(name: "Updater", dependencies: ["PlatformKit"], path: "Port/Updater"),
+        .target(
+            name: "Updater",
+            dependencies: ["PlatformKit", .product(name: "Crypto", package: "swift-crypto")],
+            path: "Port/Updater"
+        ),
         .target(
             name: "Dictation",
             dependencies: ["Mila", "Combine", "PlatformKit", .product(name: "TranscriptionCore", package: "TranscriptionCore")],
@@ -98,15 +120,58 @@ let package = Package(
             swiftSettings: [.unsafeFlags(["-enable-testing"])]
         ),
         .systemLibrary(name: "CX11", path: "Port/CX11", pkgConfig: "x11", providers: [.apt(["libx11-dev"])]),
+        .systemLibrary(name: "CSecret", path: "Port/CSecret", pkgConfig: "libsecret-1",
+                       providers: [.apt(["libsecret-1-dev"])]),
         .target(
             name: "LinuxPlatform",
-            dependencies: ["PlatformKit", "AudioCapture", "Updater", "CX11"],
+            dependencies: [
+                "PlatformKit", "AudioCapture", "Updater",
+                .target(name: "CX11", condition: .when(platforms: [.linux])),
+                .target(name: "CSecret", condition: .when(platforms: [.linux])),
+            ],
             path: "Port/LinuxPlatform"
+        ),
+        // Windows headers Swift's WinSDK module does not expose.
+        // A C target rather than a system library: its header must not parse
+        // the Windows SDK headers, which Swift already imports as WinSDK.
+        .target(
+            name: "CWinShim",
+            path: "Port/CWinShim",
+            publicHeadersPath: "include",
+            linkerSettings: [
+                .linkedLibrary("user32", .when(platforms: [.windows])),
+                .linkedLibrary("shell32", .when(platforms: [.windows])),
+                .linkedLibrary("crypt32", .when(platforms: [.windows])),
+                .linkedLibrary("advapi32", .when(platforms: [.windows])),
+                .linkedLibrary("ole32", .when(platforms: [.windows])),
+                .linkedLibrary("wintrust", .when(platforms: [.windows])),
+            ]
+        ),
+        .target(
+            name: "WindowsPlatform",
+            dependencies: [
+                "PlatformKit", "AudioCapture", "Updater",
+                .target(name: "CWinShim", condition: .when(platforms: [.windows])),
+            ],
+            path: "Port/WindowsPlatform"
         ),
         .testTarget(
             name: "LinuxPlatformTests",
-            dependencies: ["LinuxPlatform", "Updater", "PlatformKit"],
+            dependencies: [
+                .target(name: "LinuxPlatform", condition: .when(platforms: [.linux])),
+                "Updater", "PlatformKit",
+            ],
             path: "Port/Tests/LinuxPlatformTests"
+        ),
+        .testTarget(
+            name: "UpdaterTests",
+            dependencies: ["Updater", "PlatformKit", .product(name: "Crypto", package: "swift-crypto")],
+            path: "Port/Tests/UpdaterTests"
+        ),
+        .testTarget(
+            name: "StretchTests",
+            dependencies: ["CMiniaudio"],
+            path: "Port/Tests/StretchTests"
         ),
         .testTarget(
             name: "RecordingTests",
@@ -118,6 +183,7 @@ let package = Package(
             dependencies: [
                 "AudioCapture", "PlatformKit", "OpenMilaLogging", "Recording", "Updater",
                 .target(name: "LinuxPlatform", condition: .when(platforms: [.linux])),
+                .target(name: "WindowsPlatform", condition: .when(platforms: [.windows])),
                 .product(name: "TranscriptionCore", package: "TranscriptionCore"),
             ],
             path: "Port/CLI"
@@ -135,14 +201,11 @@ let package = Package(
         // place, MilaKit + the MCP SDK, same as project.yml's mila-mcp target.
         .executableTarget(
             name: "openmila-mcp",
-            dependencies: [
-                .product(name: "MilaKit", package: "MilaKit"),
-                .product(name: "MCP", package: "swift-sdk"),
-                // The SDK uses swift-crypto off macOS through a conditional
-                // dependency the build tool does not carry to the link step.
-                .product(name: "Crypto", package: "swift-crypto"),
-            ],
-            path: "MilaMCP",
+            dependencies: [.product(name: "MilaKit", package: "MilaKit")],
+            // A port twin of upstream's MilaMCP: the MCP Swift SDK imports
+            // EventSource on Windows without linking it, and drags swift-nio
+            // in for transports this helper never uses. See CHANGES.md.
+            path: "Port/MCP",
             swiftSettings: [.unsafeFlags(["-swift-version", "5"])]
         ),
 
@@ -162,15 +225,16 @@ let package = Package(
             // Rooted at the repository so the target can take upstream's tree
             // and the port twins together; `sources` keeps it to those two.
             path: ".",
-            exclude: [
+            exclude: existing([
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/Tests/UpdaterTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/WindowsPlatform", "docs",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
                 "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE", "UPSTREAM_VERSION", "packaging",
+                "diarization", "dist", "dagger.json",
                 // Apple-only or replaced by a twin under Port/.
                 "Mila/Views", "Mila/Resources", "Mila/Assets.xcassets",
                 "Mila/VoiceMemos/VoiceMemosLibrary.swift", "Mila/VoiceMemos/DirectoryWatcher.swift",
@@ -183,7 +247,7 @@ let package = Package(
                 "Mila/Dictation",
                 "Mila/Actions/QuickActionsController.swift", "Mila/Actions/DiagnosticReporter.swift",
                 "Mila/Models/KeychainHelper.swift", "Mila/Models/SystemCapabilities.swift",
-            ],
+            ]),
             sources: ["Mila", "Port/CoreTwins"],
             // -enable-testing: upstream's types are internal (Mila is one Xcode
             // module); the port's app is a second module and reaches them via
@@ -205,14 +269,16 @@ let package = Package(
             // Rooted at the repository for the same reason as the core: it takes
             // upstream's tests in place plus the port's TestSupport twin.
             path: ".",
-            exclude: [
+            exclude: existing([
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/Tests/UpdaterTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/WindowsPlatform", "docs",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",
                 "SECURITY.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE", "UPSTREAM_VERSION", "packaging",
+                "diarization", "dist", "dagger.json",
+                "diarization", "dist", "dagger.json",
                 // Tests of Apple-bound code; the list shrinks as twins land.
                 // Fixture manifests carry only darwin keys; the port asks for linux/win32 keys.
                 "MilaTests/ClaudeBinaryInstallerTests.swift", "MilaTests/ClaudeManagedInstallTests.swift",
@@ -275,7 +341,7 @@ let package = Package(
                 "MilaTests/VoiceRecognitionGateTests.swift",
                 "MilaTests/WAVHeaderRepairTests.swift",
                 "MilaTests/WindowChromeExemptionTests.swift",
-            ],
+            ]),
             sources: ["MilaTests", "Port/Tests/MilaTestsSupport"],
             swiftSettings: [.unsafeFlags(["-swift-version", "5"])]
         ),

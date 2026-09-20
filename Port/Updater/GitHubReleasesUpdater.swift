@@ -18,9 +18,47 @@ public struct GitHubReleasesUpdater: Updater {
         public let prerelease: Bool
         public let draft: Bool
         public let htmlURL: URL
+        public let assets: [Asset]
+
+        public struct Asset: Decodable, Equatable {
+            public let name: String
+            public let browserDownloadURL: URL
+
+            enum CodingKeys: String, CodingKey {
+                case name, browserDownloadURL = "browser_download_url"
+            }
+
+            public init(name: String, browserDownloadURL: URL) {
+                self.name = name
+                self.browserDownloadURL = browserDownloadURL
+            }
+        }
 
         enum CodingKeys: String, CodingKey {
-            case tagName = "tag_name", name, body, prerelease, draft, htmlURL = "html_url"
+            case tagName = "tag_name", name, body, prerelease, draft, htmlURL = "html_url", assets
+        }
+
+        public init(tagName: String, name: String? = nil, body: String? = nil,
+                    prerelease: Bool = false, draft: Bool = false, htmlURL: URL,
+                    assets: [Asset] = []) {
+            self.tagName = tagName
+            self.name = name
+            self.body = body
+            self.prerelease = prerelease
+            self.draft = draft
+            self.htmlURL = htmlURL
+            self.assets = assets
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            tagName = try container.decode(String.self, forKey: .tagName)
+            name = try container.decodeIfPresent(String.self, forKey: .name)
+            body = try container.decodeIfPresent(String.self, forKey: .body)
+            prerelease = try container.decodeIfPresent(Bool.self, forKey: .prerelease) ?? false
+            draft = try container.decodeIfPresent(Bool.self, forKey: .draft) ?? false
+            htmlURL = try container.decode(URL.self, forKey: .htmlURL)
+            assets = try container.decodeIfPresent([Asset].self, forKey: .assets) ?? []
         }
     }
 
@@ -61,7 +99,14 @@ public struct GitHubReleasesUpdater: Updater {
         return AvailableUpdate(version: version.description,
                                isPrerelease: release.prerelease || SemanticVersion.isPrerelease(release.tagName),
                                releaseNotesMarkdown: release.body ?? "",
-                               downloadPage: release.htmlURL)
+                               downloadPage: release.htmlURL,
+                               assets: release.assets.map { UpdateAsset(name: $0.name, url: $0.browserDownloadURL) })
+    }
+
+    /// Replaces this build where it can: an AppImage rewrites itself after a
+    /// checksum check, anything else hands the user the release page.
+    public func install(_ update: AvailableUpdate) async throws -> UpdateInstallOutcome {
+        try await AppImageSelfUpdate(fetch: fetch).install(update)
     }
 
     public static func download(_ url: URL) async throws -> Data {

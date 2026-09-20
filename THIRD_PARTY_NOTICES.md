@@ -85,9 +85,10 @@ licence) where statically linked.
 
 ### MCP Swift SDK (Apache-2.0, with some contributions under MIT)
 
-Used by the `openmila-mcp` helper, pinned to the version Mila pins (0.12.1).
-The project is moving from MIT to Apache-2.0; contributions not yet relicensed
-remain MIT.
+Not linked by OpenMila's builds: the port's `openmila-mcp` speaks MCP's stdio
+JSON-RPC directly (see CHANGES.md). The entry stays because macOS builds from
+upstream's project still use the SDK, and the port tracks the same version
+(0.12.1) for protocol compatibility.
 
 - Project: https://github.com/modelcontextprotocol/swift-sdk
 - Copyright © Anthropic, PBC and the MCP Swift SDK contributors.
@@ -162,8 +163,10 @@ Each package ships its own license text in its installed distribution metadata; 
 ## C. Used from the operating system, not shipped
 
 On Linux: GTK 4 and its stack (LGPL-2.1-or-later), libadwaita (LGPL-2.1-or-later),
+libsecret and GLib (LGPL-2.1-or-later, for the desktop keyring),
 PipeWire or PulseAudio client libraries (MIT / LGPL), libX11 (MIT), and,
-when installed, ffmpeg (for AAC and non-WAV audio), `wl-copy`/`xclip`,
+when installed, ffmpeg (for AAC and non-WAV audio), `pw-dump`/`pw-record`
+(per-application audio capture), `wl-copy`/`xclip`,
 `wtype`/`xdotool` and `notify-send`. These are linked or called at run time
 from the system's own packages and are not redistributed by OpenMila.
 

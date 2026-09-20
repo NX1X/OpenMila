@@ -1,5 +1,9 @@
 // Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
-
+//
+// Linux only: the types under test exist only there, and SwiftPM has no way to
+// leave a test target out of a Windows build, so the file compiles to nothing
+// off Linux.
+#if os(Linux)
 import Foundation
 import PlatformKit
 import XCTest
@@ -136,3 +140,113 @@ final class UpdaterTests: XCTestCase {
         XCTAssertNil(SemanticVersion("Alpharetta"))
     }
 }
+
+/// The Secret Service store, exercised against whatever keyring the machine is
+/// running. Skipped where none answers (a bare X session, a container, CI),
+/// because the fallback is then the thing under test and `FileSecretStore`
+/// has its own coverage.
+final class SecretServiceStoreTests: XCTestCase {
+    private let key = "openmila-test-\(UUID().uuidString)"
+
+    func test_a_secret_round_trips_through_the_keyring() throws {
+        try XCTSkipUnless(SecretServiceStore.isAvailable, "no Secret Service on this session bus")
+        let store = SecretServiceStore()
+        XCTAssertTrue(store.isAbsent(key: key))
+
+        try store.save(key: key, value: "hunter2")
+        XCTAssertEqual(store.load(key: key), "hunter2")
+        XCTAssertFalse(store.isAbsent(key: key))
+
+        try store.save(key: key, value: "hunter3")
+        XCTAssertEqual(store.load(key: key), "hunter3")
+
+        try store.delete(key: key)
+        XCTAssertNil(store.load(key: key))
+        XCTAssertTrue(store.isAbsent(key: key))
+    }
+
+    func test_saving_an_empty_value_removes_the_entry() throws {
+        try XCTSkipUnless(SecretServiceStore.isAvailable, "no Secret Service on this session bus")
+        let store = SecretServiceStore()
+        try store.save(key: key, value: "temporary")
+        try store.save(key: key, value: "")
+        XCTAssertNil(store.load(key: key))
+    }
+
+    func test_deleting_something_that_was_never_stored_is_not_an_error() throws {
+        try XCTSkipUnless(SecretServiceStore.isAvailable, "no Secret Service on this session bus")
+        XCTAssertNoThrow(try SecretServiceStore().delete(key: key))
+    }
+
+    /// The platform hands out the keyring when one is running, and files when
+    /// none is; either way a secret written comes back.
+    func test_the_platform_store_round_trips_whichever_backend_it_chose() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("openmila-secrets-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = LinuxSecretStore(fallbackDirectory: directory)
+        try store.save(key: key, value: "value")
+        XCTAssertEqual(store.load(key: key), "value")
+        try store.delete(key: key)
+        XCTAssertNil(store.load(key: key))
+    }
+}
+/// The pw-dump reading behind per-application audio capture. The graph is a
+/// fixture, so this runs anywhere - the live path is exercised by
+/// `openmila-cli app-audio`.
+final class PipeWireGraphTests: XCTestCase {
+    private func object(_ props: [String: Any]) -> [String: Any] {
+        ["info": ["props": props]]
+    }
+
+    func test_an_application_stream_becomes_a_target() throws {
+        let target = try XCTUnwrap(PipeWireAppAudioCapture.target(from: object([
+            "media.class": "Stream/Output/Audio",
+            "object.serial": 73,
+            "application.name": "Zoom",
+            "media.name": "Zoom Meeting",
+            "application.process.id": 4242,
+        ])))
+        XCTAssertEqual(target.id, "73")
+        XCTAssertEqual(target.name, "Zoom - Zoom Meeting")
+        XCTAssertEqual(target.scope, .application(processID: 4242))
+    }
+
+    func test_a_stream_without_a_pid_still_becomes_a_target() throws {
+        let target = try XCTUnwrap(PipeWireAppAudioCapture.target(from: object([
+            "media.class": "Stream/Output/Audio",
+            "object.serial": 5,
+            "node.name": "pw-play",
+        ])))
+        XCTAssertEqual(target.id, "5")
+        XCTAssertEqual(target.name, "pw-play")
+        XCTAssertEqual(target.scope, .application(processID: 0))
+    }
+
+    func test_inputs_sinks_and_video_are_not_targets() {
+        for mediaClass in ["Stream/Input/Audio", "Audio/Sink", "Audio/Source", "Stream/Output/Video"] {
+            XCTAssertNil(PipeWireAppAudioCapture.target(from: object([
+                "media.class": mediaClass, "object.serial": 9, "application.name": "x",
+            ])), "\(mediaClass) should not be offered as an app-audio target")
+        }
+    }
+
+    func test_two_streams_from_one_application_get_distinct_names() {
+        let targets = [
+            AudioCaptureTarget(id: "1", name: "Chromium", scope: .application(processID: 10)),
+            AudioCaptureTarget(id: "2", name: "Chromium", scope: .application(processID: 10)),
+            AudioCaptureTarget(id: "3", name: "Zoom", scope: .application(processID: 11)),
+        ]
+        let named = LinuxAppAudioCapture.disambiguated(targets).map(\.name)
+        XCTAssertEqual(named, ["Chromium (1)", "Chromium (2)", "Zoom"])
+    }
+
+    func test_a_stream_with_no_serial_is_skipped() {
+        // Without a serial there is nothing to hand --target, and the node id
+        // is not a safe substitute: it is reused as nodes come and go.
+        XCTAssertNil(PipeWireAppAudioCapture.target(from: object([
+            "media.class": "Stream/Output/Audio", "application.name": "Zoom",
+        ])))
+    }
+}
+#endif

@@ -10,6 +10,7 @@
 #include "miniaudio.h"
 
 #include "om_audio.h"
+#include "include/om_stretch.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -159,8 +160,8 @@ const char *om_result_description(int32_t result) {
 struct om_player {
     ma_decoder decoder;
     ma_device device;
-    ma_resampler resampler;
-    int decoder_ready, device_ready, resampler_ready;
+    om_stretch *stretch;
+    int decoder_ready, device_ready;
     double rate;
     ma_uint32 sample_rate;
     ma_uint32 channels;
@@ -169,6 +170,17 @@ struct om_player {
     int playing;
 };
 
+/// Hands the stretcher more source audio. The play position follows the
+/// SOURCE, not the output, so the transcript keeps following the words
+/// whatever the speed.
+static uint64_t om_player_fill(void *user, float *dst, uint64_t frames) {
+    om_player *p = (om_player *)user;
+    ma_uint64 read = 0;
+    ma_decoder_read_pcm_frames(&p->decoder, dst, frames, &read);
+    p->cursor_frames += read;
+    return (uint64_t)read;
+}
+
 static void om_player_callback(ma_device *device, void *output, const void *input, ma_uint32 frames) {
     (void)input;
     om_player *p = (om_player *)device->pUserData;
@@ -176,25 +188,10 @@ static void om_player_callback(ma_device *device, void *output, const void *inpu
     memset(out, 0, (size_t)frames * p->channels * sizeof(float));
     if (!p->playing) return;
 
-    if (p->rate == 1.0) {
-        ma_uint64 read = 0;
-        ma_decoder_read_pcm_frames(&p->decoder, out, frames, &read);
-        p->cursor_frames += read;
-        if (read < frames) p->playing = 0;
-        return;
-    }
-    // Pull ceil(frames * rate) source frames and resample to the requested
-    // output count.
-    ma_uint64 need = (ma_uint64)(frames * p->rate) + 2;
-    float *tmp = (float *)malloc((size_t)need * p->channels * sizeof(float));
-    if (tmp == NULL) return;
-    ma_uint64 read = 0;
-    ma_decoder_read_pcm_frames(&p->decoder, tmp, need, &read);
-    p->cursor_frames += read;
-    ma_uint64 in_frames = read, out_frames = frames;
-    ma_resampler_process_pcm_frames(&p->resampler, tmp, &in_frames, out, &out_frames);
-    free(tmp);
-    if (read < need) p->playing = 0;
+    // Speed changes go through the time stretcher, which keeps the pitch; a
+    // resampler would make voices squeak at 1.5x.
+    uint64_t written = om_stretch_read(p->stretch, out, frames, om_player_fill, p);
+    if (written < frames) p->playing = 0;
 }
 
 om_player *om_player_open(const char *path, int32_t *error) {
@@ -211,10 +208,8 @@ om_player *om_player_open(const char *path, int32_t *error) {
     p->channels = p->decoder.outputChannels;
     ma_decoder_get_length_in_pcm_frames(&p->decoder, &p->length_frames);
 
-    ma_resampler_config rc = ma_resampler_config_init(ma_format_f32, p->channels, p->sample_rate, p->sample_rate, ma_resample_algorithm_linear);
-    r = ma_resampler_init(&rc, NULL, &p->resampler);
-    if (r != MA_SUCCESS) goto fail;
-    p->resampler_ready = 1;
+    p->stretch = om_stretch_create(p->sample_rate, p->channels);
+    if (p->stretch == NULL) { r = MA_OUT_OF_MEMORY; goto fail; }
 
     ma_device_config config = ma_device_config_init(ma_device_type_playback);
     config.playback.format = ma_format_f32;
@@ -237,7 +232,7 @@ fail:
 void om_player_close(om_player *p) {
     if (p == NULL) return;
     if (p->device_ready) ma_device_uninit(&p->device);
-    if (p->resampler_ready) ma_resampler_uninit(&p->resampler, NULL);
+    if (p->stretch) om_stretch_destroy(p->stretch);
     if (p->decoder_ready) ma_decoder_uninit(&p->decoder);
     free(p);
 }
@@ -253,12 +248,16 @@ int32_t om_player_seek(om_player *p, double seconds) {
     ma_uint64 frame = (ma_uint64)(seconds * p->sample_rate);
     if (frame > p->length_frames) frame = p->length_frames;
     ma_result r = ma_decoder_seek_to_pcm_frame(&p->decoder, frame);
-    if (r == MA_SUCCESS) p->cursor_frames = frame;
+    if (r == MA_SUCCESS) {
+        p->cursor_frames = frame;
+        om_stretch_reset(p->stretch);   // buffered audio is from the old position
+    }
     return (int32_t)r;
 }
 
 int32_t om_player_set_rate(om_player *p, double rate) {
     if (!p || rate < 0.5 || rate > 2.0) return MA_INVALID_ARGS;
     p->rate = rate;
-    return (int32_t)ma_resampler_set_rate(&p->resampler, (ma_uint32)(p->sample_rate * rate), p->sample_rate);
+    om_stretch_set_rate(p->stretch, rate);
+    return MA_SUCCESS;
 }

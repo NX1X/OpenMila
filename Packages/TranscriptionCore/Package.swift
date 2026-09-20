@@ -1,7 +1,11 @@
 // swift-tools-version: 5.10
 import PackageDescription
 
-#if os(Linux)
+// Modified by NX1X for OpenMila; see CHANGES.md.
+// Windows builds whisper.cpp from the pinned commit exactly as Linux does;
+// the xcframework is macOS-only, so the system library is the default and
+// the binary target is the macOS special case.
+#if !os(macOS)
 let whisperDep: Target = .systemLibrary(
     name: "whisper",
     path: "Sources/CWhisper"

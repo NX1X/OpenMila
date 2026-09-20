@@ -1,0 +1,7 @@
+module CSecret [system] {
+    header "shim.h"
+    link "secret-1"
+    link "glib-2.0"
+    link "gobject-2.0"
+    export *
+}
