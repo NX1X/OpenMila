@@ -99,7 +99,7 @@ evidence is direct. Windows work is behind it by design.
 | # | Feature | Linux | Windows |
 |---|---|---|---|
 | 51 | Sidebar: Home, All Transcriptions, folders with drag-and-drop, Dictations, watched folders, Recently Deleted | done - SwiftCrossUI + GTK4 | planned |
-| 52 | Detail view: playback, click to seek, 0.5x-2x speed, transcript follows playback | partial - playback, seek and speed work; speed resamples, so pitch shifts (upstream preserves it; a time-stretch stage is the remaining work) | planned |
+| 52 | Detail view: playback, click to seek, 0.5x-2x speed, transcript follows playback | done - speed goes through a WSOLA time stretcher, so pitch is preserved (`StretchTests`) | planned |
 | 53 | Post-recording popup and rename sheet with summary and action items | done | planned |
 | 54 | Right-click context menu on recordings | done - GTK `GtkPopover` via a button-3 gesture | planned |
 | 55 | Copy and share transcript with speaker labels, SRT export, timestamps | done | written - core only |

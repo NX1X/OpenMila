@@ -1,4 +1,5 @@
 module CMiniaudio {
     header "om_audio.h"
+    header "om_stretch.h"
     export *
 }
