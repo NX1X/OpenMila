@@ -16,7 +16,9 @@ $ErrorActionPreference = "Stop"
 $root = Resolve-Path "$PSScriptRoot\..\.."
 Set-Location $root
 
-$flags = @("-Xcc", "-I$Prefix\include", "-Xlinker", "-L$Prefix\lib")
+# link.exe takes /LIBPATH:, not the -L that Unix linkers use: passing -L
+# through -Xlinker makes the link fail with "unrecognized option".
+$flags = @("-Xcc", "-I$Prefix\include", "-Xlinker", "/LIBPATH:$Prefix\lib")
 $env:Path = "$Prefix\bin;$env:Path"
 
 Write-Host "==> core, CLI and MCP helper"
