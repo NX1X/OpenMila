@@ -59,15 +59,26 @@ final class SelfUpdateTests: XCTestCase {
     // MARK: Installing
 
     /// Serves the release's files from memory, and records what was asked for.
-    private func updater(files: [String: Data]) -> (AppImageSelfUpdate, () -> [String]) {
-        let requested = NSMutableArray()
-        let installer = AppImageSelfUpdate { url in
+    /// `runningImage` stands in for the AppImage this process would be: the
+    /// real value comes from an environment variable, which Windows' CRT has no
+    /// portable setter for, so it is injected rather than set.
+    private func updater(files: [String: Data], runningImage: URL?) -> (AppImageSelfUpdate, () -> [String]) {
+        let requested = Recorder()
+        let installer = AppImageSelfUpdate(fetch: { url in
             let name = url.lastPathComponent
             requested.add(name)
             guard let data = files[name] else { throw URLError(.fileDoesNotExist) }
             return data
-        }
-        return (installer, { requested.compactMap { $0 as? String } })
+        }, runningImage: runningImage)
+        return (installer, { requested.names })
+    }
+
+    /// A Sendable box, because the fetch closure is @Sendable.
+    private final class Recorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [String] = []
+        func add(_ name: String) { lock.lock(); storage.append(name); lock.unlock() }
+        var names: [String] { lock.lock(); defer { lock.unlock() }; return storage }
     }
 
     private func withRunningAppImage(_ body: (URL) async throws -> Void) async throws {
@@ -77,8 +88,6 @@ final class SelfUpdateTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let image = directory.appendingPathComponent("OpenMila-1.9.5-x86_64.AppImage")
         try Data("old build".utf8).write(to: image)
-        setenv("APPIMAGE", image.path, 1)
-        defer { unsetenv("APPIMAGE") }
         try await body(image)
     }
 
@@ -89,7 +98,7 @@ final class SelfUpdateTests: XCTestCase {
             let (installer, _) = updater(files: [
                 name: payload,
                 "SHA256SUMS": Data("\(digest(payload))  \(name)\n".utf8),
-            ])
+            ], runningImage: image)
             let update = AvailableUpdate(version: "1.9.6", isPrerelease: false, releaseNotesMarkdown: "",
                                          downloadPage: page, assets: [asset(name), asset("SHA256SUMS")])
 
@@ -108,7 +117,7 @@ final class SelfUpdateTests: XCTestCase {
             let (installer, _) = updater(files: [
                 name: Data("tampered".utf8),
                 "SHA256SUMS": Data("\(digest(Data("expected".utf8)))  \(name)\n".utf8),
-            ])
+            ], runningImage: image)
             let update = AvailableUpdate(version: "1.9.6", isPrerelease: false, releaseNotesMarkdown: "",
                                          downloadPage: page, assets: [asset(name), asset("SHA256SUMS")])
 
@@ -122,7 +131,7 @@ final class SelfUpdateTests: XCTestCase {
     func test_a_release_without_a_checksum_installs_nothing() async throws {
         try await withRunningAppImage { image in
             let name = "OpenMila-1.9.6-x86_64.AppImage"
-            let (installer, requested) = updater(files: [name: Data("new build".utf8)])
+            let (installer, requested) = updater(files: [name: Data("new build".utf8)], runningImage: image)
             let update = AvailableUpdate(version: "1.9.6", isPrerelease: false, releaseNotesMarkdown: "",
                                          downloadPage: page, assets: [asset(name)])
 
@@ -135,8 +144,7 @@ final class SelfUpdateTests: XCTestCase {
     }
 
     func test_a_build_that_is_not_an_appimage_sends_the_user_to_the_release_page() async throws {
-        unsetenv("APPIMAGE")
-        let (installer, _) = updater(files: [:])
+        let (installer, _) = updater(files: [:], runningImage: nil)
         let update = AvailableUpdate(version: "1.9.6", isPrerelease: false, releaseNotesMarkdown: "",
                                      downloadPage: page, assets: [asset("openmila_1.9.6_amd64.deb")])
         let outcome = try await installer.install(update, architecture: "x86_64")

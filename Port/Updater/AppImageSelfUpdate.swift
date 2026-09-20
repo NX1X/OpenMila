@@ -47,13 +47,18 @@ public struct AppImageSelfUpdate: Sendable {
     }
 
     private let fetch: @Sendable (URL) async throws -> Data
+    private let runningImage: URL?
 
-    public init(fetch: @escaping @Sendable (URL) async throws -> Data = GitHubReleasesUpdater.download) {
+    /// `runningImage` is injectable so tests can point at a file they own;
+    /// nothing else passes it.
+    public init(fetch: @escaping @Sendable (URL) async throws -> Data = GitHubReleasesUpdater.download,
+                runningImage: URL? = AppImageSelfUpdate.runningAppImage) {
         self.fetch = fetch
+        self.runningImage = runningImage
     }
 
     public func install(_ update: AvailableUpdate, architecture: String = currentArchitecture) async throws -> UpdateInstallOutcome {
-        guard let target = Self.runningAppImage else {
+        guard let target = runningImage else {
             return .manual(update.downloadPage)
         }
         guard let asset = Self.appImageAsset(in: update.assets, architecture: architecture) else {
