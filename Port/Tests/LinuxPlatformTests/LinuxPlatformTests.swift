@@ -136,7 +136,13 @@ final class UpdaterTests: XCTestCase {
         XCTAssertLessThan(v("1.9.5-beta.2"), v("1.9.5"))
         XCTAssertLessThan(v("1.9.5-beta.2"), v("1.9.5-beta.10"))
         XCTAssertLessThan(v("1.9.5"), v("1.10.0"))
-        XCTAssertEqual(v("1.9.5+port.1"), v("1.9.5+port.2"))
+        // Semver ignores build metadata in precedence, and this test used to
+        // assert that. The port cannot: its versions are <upstream>+port.N, so
+        // two port releases of one upstream version differ only there, and
+        // ignoring it left the updater unable to offer an upgrade. See
+        // docs/port/VERSIONS.md and UpdaterTests/VersionOrderTests.
+        XCTAssertLessThan(v("1.9.5+port.1"), v("1.9.5+port.2"))
+        XCTAssertNotEqual(v("1.9.5+port.1"), v("1.9.5+port.2"))
         XCTAssertNil(SemanticVersion("Alpharetta"))
     }
 }
