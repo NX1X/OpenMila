@@ -399,6 +399,12 @@ final class DiarizationBootstrap: ObservableObject {
     /// the interpreter was itself ad-hoc, so library validation never kicked
     /// in; that's why this regressed only once releases became notarized.)
     private func signFreshDylibs() async throws {
+        #if !os(macOS)
+        // Ad-hoc code signing is a macOS requirement (and `codesign` exists
+        // only there); Linux and Windows load the freshly written libraries
+        // as they are.
+        return
+        #else
         // Sign both torch/ and torchaudio/ — torch ships most of the
         // dylibs (~90 MB) but torchaudio has a handful of its own.
         let candidates = ["torch", "torchaudio"]
@@ -426,6 +432,7 @@ final class DiarizationBootstrap: ObservableObject {
             // Non-fatal: ad-hoc signing failures don't block functionality on
             // current macOS. If it ever does, we'll catch it at the diarize call.
         }.value
+        #endif
     }
 }
 

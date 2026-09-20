@@ -76,7 +76,9 @@ VENV="$TMP/resolve-venv"
     --index-url https://download.pytorch.org/whl/cpu \
     --extra-index-url https://pypi.org/simple >&2
 # torch, torchaudio and the CUDA packages are downloaded by the app instead.
-"$VENV/bin/python" -m pip freeze | grep -viE "^(torch|torchaudio|nvidia-|triton)" > "$TMP/frozen.txt"
+# Exactly torch and torchaudio, not every name that begins with "torch":
+# torchmetrics is a pyannote dependency and must stay in the bundle.
+"$VENV/bin/python" -m pip freeze | grep -viE "^(torch|torchaudio|triton)==|^nvidia-" > "$TMP/frozen.txt"
 wc -l < "$TMP/frozen.txt" >&2
 
 log "installing the frozen set into the bundle"

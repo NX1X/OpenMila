@@ -64,7 +64,9 @@ try {
         --extra-index-url https://pypi.org/simple
     $frozen = Join-Path $tmp "frozen.txt"
     # torch, torchaudio and the CUDA packages are downloaded by the app instead.
-    & $venvPy -m pip freeze | Where-Object { $_ -notmatch "^(torch|torchaudio|nvidia-|triton)" } |
+    # Exactly torch and torchaudio, not every name beginning with "torch":
+    # torchmetrics is a pyannote dependency and must stay in the bundle.
+    & $venvPy -m pip freeze | Where-Object { $_ -notmatch "^(torch|torchaudio|triton)==" -and $_ -notmatch "^nvidia-" } |
         Set-Content -Encoding ascii $frozen
 
     Write-Host "==> installing the frozen set into the bundle"
