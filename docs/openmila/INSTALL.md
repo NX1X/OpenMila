@@ -40,6 +40,7 @@ checked against a pinned SHA-256 before it is used.
 | Recordings, transcripts, models, settings sidecars | `~/.local/share/Mila/` |
 | Logs | `~/.local/state/openmila/logs/openmila.log` |
 | Settings | `~/.config/` (managed by the app) |
+| Secrets (API keys, tokens) | your desktop keyring through the Secret Service (GNOME Keyring, KWallet, KeePassXC); where no keyring is running, `~/.local/share/Mila/secrets/` with owner-only permissions |
 
 The data folder is named `Mila` on purpose: the MCP helper and other shared
 code look for it by that name.
