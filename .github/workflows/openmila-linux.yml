@@ -40,6 +40,7 @@ jobs:
           submodules: recursive
 
       - name: Install the Dagger CLI (pinned, checksum verified)
+        timeout-minutes: 5
         run: |
           cd "$RUNNER_TEMP"
           file="dagger_v${DAGGER_VERSION}_linux_amd64.tar.gz"
@@ -51,4 +52,7 @@ jobs:
       # The desktop app is over half the pipeline's time, so a pull request
       # runs everything else and a push to main adds the app.
       - name: Run the pipeline (dagger call check)
+        # The pipeline is about 15 minutes with the app, 8 without; this is the
+        # backstop for a stage that wedges rather than fails.
+        timeout-minutes: 40
         run: dagger call --progress=plain check --with-app=${{ github.event_name == 'push' }}

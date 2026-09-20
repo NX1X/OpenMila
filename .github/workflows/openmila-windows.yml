@@ -66,6 +66,7 @@ jobs:
 
       - name: Install Swift (Authenticode verified)
         if: steps.swift-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 20
         run: |
           $ErrorActionPreference = "Stop"
           $url = "https://download.swift.org/swift-$env:SWIFT_VERSION-release/windows10/swift-$env:SWIFT_VERSION-RELEASE/swift-$env:SWIFT_VERSION-RELEASE-windows10.exe"
@@ -114,12 +115,15 @@ jobs:
 
       - name: Build whisper.cpp at the pinned commit
         if: steps.whisper-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 20
         run: .\scripts\port\build-whisper.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix"
 
       - name: Build the core, the CLI and the MCP helper
+        timeout-minutes: 25
         run: .\scripts\port\build-windows.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix"
 
       - name: Run the port's tests
+        timeout-minutes: 20
         run: .\scripts\port\build-windows.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -Test
 
       # Off by default: the runtime is about 2 GB of wheels, which is not worth
@@ -127,6 +131,7 @@ jobs:
       # when the bundle script or its pins change.
       - name: Build the diarization Python runtime
         if: inputs.diarization
+        timeout-minutes: 40
         run: .\diarization\build-bundle-windows.ps1
 
       # The app and the zip are the expensive half of this job: they run on a
@@ -135,10 +140,14 @@ jobs:
       # gets the core and the tests, which is what catches a Windows break.
       - name: Build the desktop app
         if: github.event_name == 'push' || inputs.app
+        # The UI toolkit and its WinUI bindings are the long pole: about 35
+        # minutes from cold, a few minutes when the cache restores.
+        timeout-minutes: 45
         run: .\scripts\port\build-windows.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -App
 
       - name: Package the portable zip
         if: github.event_name == 'push' || inputs.app
+        timeout-minutes: 20
         run: .\packaging\windows\package.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -Configuration debug
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

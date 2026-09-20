@@ -70,12 +70,15 @@ jobs:
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: Test everything before packaging
+        timeout-minutes: 40
         run: dagger call --progress=plain check
 
       - name: Build the Linux packages
+        timeout-minutes: 40
         run: dagger call --progress=plain packages export --path=dist
 
       - name: Software bill of materials
+        timeout-minutes: 15
         run: dagger call --progress=plain sbom export --path=dist/openmila-sbom.cdx.json
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
