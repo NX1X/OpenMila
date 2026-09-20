@@ -27,11 +27,15 @@ public struct WindowsSecretStore: SecretStore {
         guard !value.isEmpty else { try delete(key: key); return }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var plain = Array(value.utf8)
-        var input = DATA_BLOB(cbData: DWORD(plain.count), pbData: &plain)
         var output = DATA_BLOB()
-        let ok = plain.withUnsafeMutableBufferPointer { _ in
-            CryptProtectData(&input, "OpenMila".withCString({ $0 }).withMemoryRebound(to: WCHAR.self, capacity: 0) { $0 },
-                             nil, nil, nil, DWORD(CRYPTPROTECT_UI_FORBIDDEN), &output)
+        // The blob must point at the buffer for the whole call, so it is
+        // built inside the closure that owns the pointer. szDataDescr is nil:
+        // it is only a label Windows shows in credential dialogs, and
+        // CRYPTPROTECT_UI_FORBIDDEN means no dialog is ever shown.
+        let ok = plain.withUnsafeMutableBufferPointer { buffer -> Bool in
+            var input = DATA_BLOB(cbData: DWORD(buffer.count), pbData: buffer.baseAddress)
+            return CryptProtectData(&input, nil, nil, nil, nil,
+                                    DWORD(CRYPTPROTECT_UI_FORBIDDEN), &output)
         }
         guard ok, let bytes = output.pbData else { throw Error.encryptFailed }
         defer { LocalFree(bytes) }
