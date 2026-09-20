@@ -17,7 +17,7 @@ public enum LinuxPlatform {
             appAudio: MiniaudioSystemLoopback(),
             hotkeys: X11Hotkeys.isAvailable ? try? X11Hotkeys() : nil,
             textInjector: LinuxTextInjector(notifier: notifier),
-            secrets: FileSecretStore(directory: paths.dataDirectory.appendingPathComponent("secrets", isDirectory: true)),
+            secrets: LinuxSecretStore(fallbackDirectory: paths.dataDirectory.appendingPathComponent("secrets", isDirectory: true)),
             sleep: LinuxSleepInhibitor(),
             paths: paths,
             updater: GitHubReleasesUpdater(repository: repository, currentVersion: appVersion),

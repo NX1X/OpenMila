@@ -50,7 +50,7 @@ Priority: optional
 Architecture: amd64
 Maintainer: NX1X <https://github.com/NX1X/OpenMila>
 Installed-Size: $INSTALLED_KB
-Depends: libgtk-4-1, libadwaita-1-0, libc6, zlib1g
+Depends: libgtk-4-1, libadwaita-1-0, libsecret-1-0, libglib2.0-0, libc6, zlib1g
 Recommends: pipewire | pulseaudio, ffmpeg, wl-clipboard | xclip
 Suggests: wtype, xdotool, libnotify-bin
 Homepage: https://openmila.nx1xlab.dev

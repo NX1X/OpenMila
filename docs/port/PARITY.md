@@ -127,7 +127,7 @@ evidence is direct. Windows work is behind it by design.
 |---|---|---|---|
 | 68 | Auto-update with a beta channel and a pre-release guard | partial - `GitHubReleasesUpdater` checks, reports and opens the release; it does not replace the installed AppImage or `.deb` | planned - no installer upgrade path yet |
 | 69 | Permission prompts for microphone, screen recording, accessibility | n/a - no per-app permission gates; PipeWire and portal dialogs appear where the session requires them | n/a - the microphone privacy setting is the OS's own |
-| 70 | Keychain storage for API keys | partial - `FileSecretStore` with 0600 permissions; libsecret is not wired | written - DPAPI |
+| 70 | Keychain storage for API keys | done - the desktop keyring through libsecret (GNOME Keyring, KWallet, KeePassXC), with 0600 files where no Secret Service answers (`SecretServiceStoreTests`) | written - DPAPI |
 | 71 | Privacy-safe logging | done | written |
 | 72 | Stable code signing so permissions survive updates | n/a | n/a |
 

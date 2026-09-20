@@ -116,11 +116,14 @@ let package = Package(
             swiftSettings: [.unsafeFlags(["-enable-testing"])]
         ),
         .systemLibrary(name: "CX11", path: "Port/CX11", pkgConfig: "x11", providers: [.apt(["libx11-dev"])]),
+        .systemLibrary(name: "CSecret", path: "Port/CSecret", pkgConfig: "libsecret-1",
+                       providers: [.apt(["libsecret-1-dev"])]),
         .target(
             name: "LinuxPlatform",
             dependencies: [
                 "PlatformKit", "AudioCapture", "Updater",
                 .target(name: "CX11", condition: .when(platforms: [.linux])),
+                .target(name: "CSecret", condition: .when(platforms: [.linux])),
             ],
             path: "Port/LinuxPlatform"
         ),
@@ -217,7 +220,7 @@ let package = Package(
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/WindowsPlatform", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/WindowsPlatform", "docs",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
@@ -260,7 +263,7 @@ let package = Package(
             exclude: existing([
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/WindowsPlatform", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/WindowsPlatform", "docs",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",

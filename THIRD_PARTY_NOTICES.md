@@ -163,6 +163,7 @@ Each package ships its own license text in its installed distribution metadata; 
 ## C. Used from the operating system, not shipped
 
 On Linux: GTK 4 and its stack (LGPL-2.1-or-later), libadwaita (LGPL-2.1-or-later),
+libsecret and GLib (LGPL-2.1-or-later, for the desktop keyring),
 PipeWire or PulseAudio client libraries (MIT / LGPL), libX11 (MIT), and,
 when installed, ffmpeg (for AAC and non-WAV audio), `wl-copy`/`xclip`,
 `wtype`/`xdotool` and `notify-send`. These are linked or called at run time

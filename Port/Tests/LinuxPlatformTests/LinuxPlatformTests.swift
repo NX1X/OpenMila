@@ -140,4 +140,55 @@ final class UpdaterTests: XCTestCase {
         XCTAssertNil(SemanticVersion("Alpharetta"))
     }
 }
+
+/// The Secret Service store, exercised against whatever keyring the machine is
+/// running. Skipped where none answers (a bare X session, a container, CI),
+/// because the fallback is then the thing under test and `FileSecretStore`
+/// has its own coverage.
+final class SecretServiceStoreTests: XCTestCase {
+    private let key = "openmila-test-\(UUID().uuidString)"
+
+    func test_a_secret_round_trips_through_the_keyring() throws {
+        try XCTSkipUnless(SecretServiceStore.isAvailable, "no Secret Service on this session bus")
+        let store = SecretServiceStore()
+        XCTAssertTrue(store.isAbsent(key: key))
+
+        try store.save(key: key, value: "hunter2")
+        XCTAssertEqual(store.load(key: key), "hunter2")
+        XCTAssertFalse(store.isAbsent(key: key))
+
+        try store.save(key: key, value: "hunter3")
+        XCTAssertEqual(store.load(key: key), "hunter3")
+
+        try store.delete(key: key)
+        XCTAssertNil(store.load(key: key))
+        XCTAssertTrue(store.isAbsent(key: key))
+    }
+
+    func test_saving_an_empty_value_removes_the_entry() throws {
+        try XCTSkipUnless(SecretServiceStore.isAvailable, "no Secret Service on this session bus")
+        let store = SecretServiceStore()
+        try store.save(key: key, value: "temporary")
+        try store.save(key: key, value: "")
+        XCTAssertNil(store.load(key: key))
+    }
+
+    func test_deleting_something_that_was_never_stored_is_not_an_error() throws {
+        try XCTSkipUnless(SecretServiceStore.isAvailable, "no Secret Service on this session bus")
+        XCTAssertNoThrow(try SecretServiceStore().delete(key: key))
+    }
+
+    /// The platform hands out the keyring when one is running, and files when
+    /// none is; either way a secret written comes back.
+    func test_the_platform_store_round_trips_whichever_backend_it_chose() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("openmila-secrets-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = LinuxSecretStore(fallbackDirectory: directory)
+        try store.save(key: key, value: "value")
+        XCTAssertEqual(store.load(key: key), "value")
+        try store.delete(key: key)
+        XCTAssertNil(store.load(key: key))
+    }
+}
 #endif
