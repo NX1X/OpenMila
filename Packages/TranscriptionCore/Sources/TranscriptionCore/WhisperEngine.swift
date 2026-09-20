@@ -13,6 +13,13 @@ private let whisperLog = Logger(subsystem: "io.island.mila.TranscriptionCore", c
 @inline(__always) private func whisperNotice(_ message: String) {
 #if canImport(os.log)
     whisperLog.notice("\(message, privacy: .public)")
+#else
+    // Modified by NX1X for OpenMila; see CHANGES.md. Off macOS there is no
+    // unified log to write to, and these notices are how anyone learns which
+    // backend ran, whether CoreML was skipped, and why a load was slow. They
+    // went nowhere at all before this. stderr is where the port's own logger
+    // and its diagnostic report pick them up.
+    FileHandle.standardError.write(Data("whisper: \(message)\n".utf8))
 #endif
 }
 
@@ -145,8 +152,18 @@ public actor WhisperEngine {
         params.use_gpu = true
         params.flash_attn = true
         #else
-        params.use_gpu = false
+        // Modified by NX1X for OpenMila; see CHANGES.md. A Mac always has
+        // Metal, so upstream can say yes without asking. Off macOS the answer
+        // depends on the machine: a real graphics device is worth using, a
+        // software Vulkan implementation is slower than the CPU backend, and
+        // no Vulkan at all is the common case. VulkanAvailability decides.
+        params.use_gpu = VulkanAvailability.device.isUsableGPU
         params.flash_attn = false
+        if params.use_gpu {
+            whisperNotice("GPU: \(VulkanAvailability.device.description)")
+        } else {
+            whisperNotice("CPU backend: \(VulkanAvailability.device.description)")
+        }
         #endif
 
         // Emit a preparation notification whenever a sibling

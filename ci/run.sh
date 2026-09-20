@@ -56,9 +56,22 @@ stage_whisper() {
     echo "already built at $OPENMILA_WHISPER_PREFIX"
     return
   fi
+  # The Vulkan backend is built when the toolchain has the shader compiler and
+  # the headers, which the CI image does. It costs nothing at run time on a
+  # machine without a graphics device: the port probes for one before asking
+  # whisper.cpp for a GPU at all (VulkanAvailability), and ggml keeps its CPU
+  # path either way. Building without Vulkan is still supported, so a
+  # contributor on a bare machine is not blocked.
+  VULKAN_FLAG="-DGGML_VULKAN=OFF"
+  if command -v glslc >/dev/null 2>&1 && pkg-config --exists vulkan 2>/dev/null; then
+    VULKAN_FLAG="-DGGML_VULKAN=ON"
+    log "whisper.cpp: building with the Vulkan backend"
+  else
+    log "whisper.cpp: no glslc or Vulkan headers, building the CPU backend only"
+  fi
   cmake -S "$WHISPER_SRC" -B "$WHISPER_SRC/build-linux" -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=ON -DWHISPER_BUILD_EXAMPLES=OFF -DWHISPER_BUILD_TESTS=OFF \
-    -DGGML_NATIVE=OFF -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+    -DGGML_NATIVE=OFF -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ "$VULKAN_FLAG" \
     -DCMAKE_INSTALL_PREFIX="$OPENMILA_WHISPER_PREFIX" >/dev/null
   cmake --build "$WHISPER_SRC/build-linux" -j"$(nproc)" >/dev/null
   cmake --install "$WHISPER_SRC/build-linux" >/dev/null

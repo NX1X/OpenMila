@@ -152,6 +152,17 @@ case "app-audio":
         guard !captured.isEmpty else { fail("no audio captured") }
     } catch { fail("\(error.localizedDescription)") }
 
+case "gpu":
+    // What the machine offers the model, and what the port will do with it.
+    // A software Vulkan device (llvmpipe, lavapipe) is reported but refused:
+    // running the model on the CPU pretending to be a GPU is slower than the
+    // CPU backend itself.
+    print("vulkan: \(VulkanAvailability.device.description)")
+    print("whisper will use: \(VulkanAvailability.device.isUsableGPU ? "the GPU" : "the CPU")")
+    if !VulkanAvailability.device.isUsableGPU {
+        print("set OPENMILA_DISABLE_GPU=1 to refuse the GPU even when one is present")
+    }
+
 case "logs":
     // Where a bug report's logs come from. Prints the directory and the tail.
     print("log directory: \(OpenMilaLog.defaultDirectory.path)")
@@ -247,5 +258,5 @@ case "transcribe":
     } catch { fail("\(error.localizedDescription)") }
 
 default:
-    print("usage: openmila-cli devices | app-audio | logs | play | notify | inject | inhibit | hotkey | meetings | update-check | session | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
+    print("usage: openmila-cli devices | app-audio | gpu | logs | play | notify | inject | inhibit | hotkey | meetings | update-check | session | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
 }

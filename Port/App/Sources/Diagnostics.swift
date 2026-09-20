@@ -6,6 +6,7 @@
 // reported as lengths; recording titles and paths never appear.
 
 import Foundation
+import TranscriptionCore
 import OpenMilaLogging
 @testable import Mila
 
@@ -23,7 +24,8 @@ enum Diagnostics {
         os=\(info.operatingSystemVersionString)
         arch=\(OpenMilaLog.architecture) cores=\(info.activeProcessorCount) ram_gb=\(info.physicalMemory / 1_073_741_824)
         session=\(info.environment["XDG_SESSION_TYPE"] ?? "?") desktop=\(info.environment["XDG_CURRENT_DESKTOP"] ?? "?")
-        whisper_backend=CPU
+        whisper_backend=\(VulkanAvailability.device.isUsableGPU ? "Vulkan" : "CPU")
+        gpu_probe=\(VulkanAvailability.device.description)
         generated=\(stamp)
         """
         try system.write(to: payload.appendingPathComponent("system.txt"), atomically: true, encoding: .utf8)
