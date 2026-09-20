@@ -8,7 +8,11 @@ import AudioCapture
 import Dictation
 import Combine
 import Foundation
+#if os(Windows)
+import WindowsPlatform
+#else
 import LinuxPlatform
+#endif
 import OpenMilaLogging
 import PlatformKit
 import Recording
@@ -65,7 +69,11 @@ final class AppModel {
 
     init() {
         OpenMilaLog.install(processName: AppIdentity.name, version: AppIdentity.version)
+#if os(Windows)
+        platform = WindowsPlatform.services(appVersion: AppIdentity.version)
+#else
         platform = LinuxPlatform.services(appVersion: AppIdentity.version)
+#endif
         try? FileManager.default.createDirectory(at: platform.paths.dataDirectory, withIntermediateDirectories: true)
 
         storageSettings = RecordingStorageSettings()

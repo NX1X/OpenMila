@@ -57,7 +57,9 @@ try {
     & $py -m venv $venv
     $venvPy = Join-Path $venv "Scripts\python.exe"
     & $venvPy -m pip install --quiet --upgrade pip wheel
-        # against the numpy 1.x C ABI.
+    # numpy is deliberately unpinned: pyannote's dependency solver picks a
+    # version its wheels are built against, and the app installs torch at
+    # runtime on top of it, exactly as upstream's macOS bundle does.
     & $venvPy -m pip install --quiet "pyannote.audio==$PyannoteVersion" `
         "torch==$TorchVersion" "torchaudio==$TorchaudioVersion" `
         --index-url https://download.pytorch.org/whl/cpu `

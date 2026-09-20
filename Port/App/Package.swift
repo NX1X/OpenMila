@@ -22,6 +22,7 @@ let package = Package(
             dependencies: [
                 .product(name: "OpenMilaCore", package: "OpenMila"),
                 .product(name: "OpenMilaLinux", package: "OpenMila", condition: .when(platforms: [.linux])),
+                .product(name: "OpenMilaWindows", package: "OpenMila", condition: .when(platforms: [.windows])),
                 .product(name: "SwiftCrossUI", package: "swift-cross-ui"),
                 .product(name: "DefaultBackend", package: "swift-cross-ui"),
                 .product(name: "GtkBackend", package: "swift-cross-ui", condition: .when(platforms: [.linux])),
