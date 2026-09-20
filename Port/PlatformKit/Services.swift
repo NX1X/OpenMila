@@ -109,24 +109,59 @@ public protocol AppPaths: Sendable {
     func resource(named name: String) -> URL?
 }
 
+public struct UpdateAsset: Equatable, Sendable {
+    public let name: String
+    public let url: URL
+
+    public init(name: String, url: URL) {
+        self.name = name
+        self.url = url
+    }
+}
+
 public struct AvailableUpdate: Equatable, Sendable {
     public let version: String
     public let isPrerelease: Bool
     public let releaseNotesMarkdown: String
     public let downloadPage: URL
+    /// The files the release publishes, so an installer can pick the one that
+    /// matches this build and the checksum that proves it.
+    public let assets: [UpdateAsset]
 
-    public init(version: String, isPrerelease: Bool, releaseNotesMarkdown: String, downloadPage: URL) {
+    public init(version: String, isPrerelease: Bool, releaseNotesMarkdown: String,
+                downloadPage: URL, assets: [UpdateAsset] = []) {
         self.version = version
         self.isPrerelease = isPrerelease
         self.releaseNotesMarkdown = releaseNotesMarkdown
         self.downloadPage = downloadPage
+        self.assets = assets
     }
+}
+
+/// What `Updater.install` managed to do.
+public enum UpdateInstallOutcome: Equatable, Sendable {
+    /// The new version is in place; `restartRequired` means the running
+    /// process is still the old one.
+    case installed(restartRequired: Bool)
+    /// This build cannot replace itself (a distribution package, a Windows
+    /// install), so the user finishes it from the release page.
+    case manual(URL)
 }
 
 /// Upstream: Sparkle via `UpdaterViewModel`. The beta channel is the release's
 /// prerelease flag; a client that has not opted in must never be offered one.
 public protocol Updater: Sendable {
     func check(includePrereleases: Bool) async throws -> AvailableUpdate?
+    /// Replaces this build with `update` where that is possible. The default
+    /// hands the user the release page, which is right for every packaging
+    /// format that a running application must not rewrite.
+    func install(_ update: AvailableUpdate) async throws -> UpdateInstallOutcome
+}
+
+public extension Updater {
+    func install(_ update: AvailableUpdate) async throws -> UpdateInstallOutcome {
+        .manual(update.downloadPage)
+    }
 }
 
 /// Upstream: `NSSound.beep()` and user-facing alerts raised off the main window.

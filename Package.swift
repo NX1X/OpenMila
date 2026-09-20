@@ -108,7 +108,11 @@ let package = Package(
         ),
         .target(name: "AudioCapture", dependencies: ["CMiniaudio", "PlatformKit"], path: "Port/AudioCapture"),
         .target(name: "Recording", dependencies: ["PlatformKit"], path: "Port/Recording"),
-        .target(name: "Updater", dependencies: ["PlatformKit"], path: "Port/Updater"),
+        .target(
+            name: "Updater",
+            dependencies: ["PlatformKit", .product(name: "Crypto", package: "swift-crypto")],
+            path: "Port/Updater"
+        ),
         .target(
             name: "Dictation",
             dependencies: ["Mila", "Combine", "PlatformKit", .product(name: "TranscriptionCore", package: "TranscriptionCore")],
@@ -158,6 +162,11 @@ let package = Package(
                 "Updater", "PlatformKit",
             ],
             path: "Port/Tests/LinuxPlatformTests"
+        ),
+        .testTarget(
+            name: "UpdaterTests",
+            dependencies: ["Updater", "PlatformKit", .product(name: "Crypto", package: "swift-crypto")],
+            path: "Port/Tests/UpdaterTests"
         ),
         .testTarget(
             name: "StretchTests",
@@ -220,7 +229,7 @@ let package = Package(
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/WindowsPlatform", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/Tests/UpdaterTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/WindowsPlatform", "docs",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
@@ -263,7 +272,7 @@ let package = Package(
             exclude: existing([
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/WindowsPlatform", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/Tests/UpdaterTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/WindowsPlatform", "docs",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",

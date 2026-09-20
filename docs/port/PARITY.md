@@ -125,7 +125,7 @@ evidence is direct. Windows work is behind it by design.
 
 | # | Feature | Linux | Windows |
 |---|---|---|---|
-| 68 | Auto-update with a beta channel and a pre-release guard | partial - `GitHubReleasesUpdater` checks, reports and opens the release; it does not replace the installed AppImage or `.deb` | planned - no installer upgrade path yet |
+| 68 | Auto-update with a beta channel and a pre-release guard | done for the AppImage - the check, the beta channel and the pre-release guard, plus an install step that verifies the published SHA-256 and replaces the running AppImage (`SelfUpdateTests`); a `.deb` install is sent to the release page, since that belongs to the package manager | partial - the check works; the zip has no self-install |
 | 69 | Permission prompts for microphone, screen recording, accessibility | n/a - no per-app permission gates; PipeWire and portal dialogs appear where the session requires them | n/a - the microphone privacy setting is the OS's own |
 | 70 | Keychain storage for API keys | done - the desktop keyring through libsecret (GNOME Keyring, KWallet, KeePassXC), with 0600 files where no Secret Service answers (`SecretServiceStoreTests`) | written - DPAPI |
 | 71 | Privacy-safe logging | done | written |
