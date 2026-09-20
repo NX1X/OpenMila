@@ -1,0 +1,176 @@
+# Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
+#
+# Cuts a release from a v* tag: Linux packages through Dagger, the Windows zip
+# on a Windows runner, a software bill of materials, checksums, build
+# provenance, and a draft GitHub release for a human to publish.
+#
+# Release notes come first, as upstream requires: RELEASE_NOTES/v<version>.md
+# must exist and say something, or the release stops before anything is built.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (must already exist)"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  DAGGER_VERSION: "0.21.9"
+  DAGGER_SHA256: "33eea0b08d6be444bada18e64b2216459100d6070abcb4b5345cee40c9fff982"
+  DAGGER_NO_NAG: "1"
+  SWIFT_VERSION: "6.4.0"
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Release notes must exist and say something
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [ -n "${{ github.event.inputs.tag }}" ]; then version="${{ github.event.inputs.tag }}"; version="${version#v}"; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          notes="RELEASE_NOTES/v$version.md"
+          test -s "$notes" || { echo "::error::$notes is missing or empty"; exit 1; }
+          grep -qvE '^\s*(#|<!--|$)' "$notes" || { echo "::error::$notes has no content"; exit 1; }
+          echo "release notes: $notes"
+          test "$(cat UPSTREAM_VERSION)" != "" || { echo "::error::UPSTREAM_VERSION is empty"; exit 1; }
+
+  linux:
+    needs: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install the Dagger CLI (pinned, checksum verified)
+        run: |
+          cd "$RUNNER_TEMP"
+          file="dagger_v${DAGGER_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 4 -o "$file" "https://github.com/dagger/dagger/releases/download/v${DAGGER_VERSION}/$file"
+          echo "${DAGGER_SHA256}  $file" | sha256sum -c -
+          tar xzf "$file" dagger
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Test everything before packaging
+        run: dagger call --progress=plain check
+
+      - name: Build the Linux packages
+        run: dagger call --progress=plain packages export --path=dist
+
+      - name: Software bill of materials
+        run: dagger call --progress=plain sbom export --path=dist/openmila-sbom.cdx.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-packages
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    needs: gate
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Cache the Swift toolchain
+        id: swift-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: C:\Users\runneradmin\AppData\Local\Programs\Swift
+          key: swift-${{ env.SWIFT_VERSION }}-windows
+
+      - name: Install Swift (Authenticode verified)
+        if: steps.swift-cache.outputs.cache-hit != 'true'
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://download.swift.org/swift-$env:SWIFT_VERSION-release/windows10/swift-$env:SWIFT_VERSION-RELEASE/swift-$env:SWIFT_VERSION-RELEASE-windows10.exe"
+          $installer = "$env:RUNNER_TEMP\swift-installer.exe"
+          curl.exe -fsSL --retry 4 -o $installer $url
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne "Valid") { throw "installer signature is $($signature.Status)" }
+          if ($signature.SignerCertificate.Subject -notmatch "Apple") { throw "unexpected signer" }
+          Start-Process -FilePath $installer -ArgumentList "/quiet" -Wait
+
+      - name: Put Swift on PATH
+        run: |
+          $swift = (Get-ChildItem "C:\Users\runneradmin\AppData\Local\Programs\Swift\Toolchains" | Select-Object -First 1).FullName + "\usr\bin"
+          echo $swift | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build whisper.cpp at the pinned commit
+        run: .\scripts\port\build-whisper.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix"
+
+      - name: Package the portable zip
+        run: .\packaging\windows\package.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -Version "${{ needs.gate.outputs.version }}"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-package
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [gate, linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: artifacts
+
+      - name: Collect the release files
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS
+
+      - name: Attest what was built
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: "release/*"
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "v$VERSION" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft $prerelease \
+            --title "OpenMila $VERSION" \
+            --notes-file "RELEASE_NOTES/v$VERSION.md"

@@ -27,6 +27,10 @@ const (
 	tinyModelSHA256 = "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
 )
 
+// syft, for the software bill of materials attached to a release. Pinned by
+// digest; bump tag and digest together.
+const syftImage = "anchore/syft:v1.52.0@sha256:500e2d872ac019436926e8322b4fc1f39441d94d21f6f4046c6ff29b30e8cb02"
+
 type OpenmilaCi struct{}
 
 // The build environment with the repository at /work/repo. Build output,
@@ -78,6 +82,33 @@ func (m *OpenmilaCi) Check(
 	source *dagger.Directory,
 ) (string, error) {
 	return m.Stage(ctx, source, "all")
+}
+
+// The Linux packages: the AppImage, the Debian package, and their checksums.
+func (m *OpenmilaCi) Packages(
+	// +defaultPath="/"
+	// +ignore=[".build", "Port/App/.build", "Port/Spikes/*/.build", "dist", "docs-internal", "**/build-linux", "Packages/*/.build"]
+	source *dagger.Directory,
+) *dagger.Directory {
+	return m.Env(source).
+		WithExec([]string{"ci/run.sh", "whisper"}).
+		WithEnvVariable("OPENMILA_SWIFT_HOME", "/opt/swift").
+		WithExec([]string{"packaging/appimage/build.sh"}).
+		WithExec([]string{"packaging/deb/build.sh"}).
+		WithExec([]string{"sh", "-c", "mkdir -p /tmp/out && cp dist/*.AppImage dist/*.deb dist/*.sha256 /tmp/out/ && rm -f /tmp/out/appimagetool*"}).
+		Directory("/tmp/out")
+}
+
+// A CycloneDX software bill of materials for the repository.
+func (m *OpenmilaCi) Sbom(
+	// +defaultPath="/"
+	// +ignore=[".build", "Port/App/.build", "Port/Spikes/*/.build", "dist", "docs-internal", ".git"]
+	source *dagger.Directory,
+) *dagger.File {
+	return dag.Container().From(syftImage).
+		WithMountedDirectory("/src", source).
+		WithExec([]string{"scan", "dir:/src", "-o", "cyclonedx-json=/tmp/openmila-sbom.cdx.json"}).
+		File("/tmp/openmila-sbom.cdx.json")
 }
 
 // Build the Linux AppImage and its .sha256 file.

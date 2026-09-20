@@ -25,9 +25,6 @@ PBS_SHA256="14b5843a3492925dab6fdb7cca7d09af83ddf1fe2851f72cf9b1edc8ed2b1db7"
 PYANNOTE_VERSION="3.3.2"
 TORCH_VERSION="2.2.2"          # pinned; downloaded at runtime by the app
 TORCHAUDIO_VERSION="2.2.2"
-PIP_PLATFORMS=(manylinux_2_28_x86_64 manylinux2014_x86_64)
-PIP_PYTHON_VERSION="3.11"
-PIP_IMPLEMENTATION="cp"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT_DIR="$ROOT/diarization/out/PythonRuntime"
@@ -70,6 +67,10 @@ log "resolving pyannote.audio $PYANNOTE_VERSION and its dependencies"
 VENV="$TMP/resolve-venv"
 "$PY" -m venv "$VENV"
 "$VENV/bin/python" -m pip install --quiet --upgrade pip wheel >&2
+# numpy is deliberately NOT pinned here. Upstream ships whatever pyannote's
+# dependencies resolve to (2.x today) and installs numpy<2 into the
+# user-writable site-packages on first run, which PYTHONPATH searches first;
+# see DiarizationBootstrap.extraInstallSpecs.
 "$VENV/bin/python" -m pip install --quiet "pyannote.audio==$PYANNOTE_VERSION" \
     "torch==$TORCH_VERSION" "torchaudio==$TORCHAUDIO_VERSION" \
     --index-url https://download.pytorch.org/whl/cpu \
@@ -81,12 +82,12 @@ wc -l < "$TMP/frozen.txt" >&2
 log "installing the frozen set into the bundle"
 SITE="$TMP/python/site-packages"
 mkdir -p "$SITE"
-PLATFORM_ARGS=()
-for platform in "${PIP_PLATFORMS[@]}"; do PLATFORM_ARGS+=(--platform "$platform"); done
+# Upstream cross-builds from an arm64 Mac and therefore pins pip's platform
+# tags. This script runs on the platform it builds for, so pip picks the right
+# wheels by itself, and the few source-only pure-Python packages (antlr4's
+# runtime among them) install as they are meant to.
 "$VENV/bin/python" -m pip install --quiet --no-deps --target "$SITE" \
-    --implementation "$PIP_IMPLEMENTATION" --python-version "$PIP_PYTHON_VERSION" \
-    "${PLATFORM_ARGS[@]}" --only-binary=:all: \
-    -r "$TMP/frozen.txt" >&2
+    --prefer-binary -r "$TMP/frozen.txt" >&2
 
 log "stripping caches and test trees"
 find "$SITE" "$TMP/python/lib" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true

@@ -57,6 +57,7 @@ try {
     & $py -m venv $venv
     $venvPy = Join-Path $venv "Scripts\python.exe"
     & $venvPy -m pip install --quiet --upgrade pip wheel
+        # against the numpy 1.x C ABI.
     & $venvPy -m pip install --quiet "pyannote.audio==$PyannoteVersion" `
         "torch==$TorchVersion" "torchaudio==$TorchaudioVersion" `
         --index-url https://download.pytorch.org/whl/cpu `
@@ -69,9 +70,8 @@ try {
     Write-Host "==> installing the frozen set into the bundle"
     $site = Join-Path $tmp "python\site-packages"
     New-Item -ItemType Directory -Force -Path $site | Out-Null
-    & $venvPy -m pip install --quiet --no-deps --target $site `
-        --implementation cp --python-version 3.11 --platform win_amd64 --only-binary=:all: `
-        -r $frozen
+    # Built on the platform it targets, so pip picks the right wheels itself.
+    & $venvPy -m pip install --quiet --no-deps --target $site --prefer-binary -r $frozen
 
     Write-Host "==> stripping caches and test trees"
     Get-ChildItem $site -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
