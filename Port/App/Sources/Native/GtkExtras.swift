@@ -8,8 +8,12 @@
 //     recording row onto a sidebar folder (upstream: .draggable/.dropDestination);
 //   - `SystemIcon`: the desktop's own symbolic icon theme.
 // Linux only; the Windows build supplies WinUI equivalents.
+//
+// The guard is os(Linux), not canImport(GtkBackend): a canImport probe makes
+// the compiler resolve the GTK modules, which on Windows means building CGtk
+// and failing with "'gtk/gtk.h' file not found".
 
-#if canImport(GtkBackend)
+#if os(Linux)
 import CGtk
 import Foundation
 import Gtk
