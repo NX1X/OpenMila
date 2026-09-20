@@ -19,7 +19,17 @@
 // OpenCombine is ever rebuilt with a stale Combine module on disk, clean first
 // (`swift package clean`). They must never be declared on macOS, where
 // they would shadow the real frameworks.
+import Foundation
 import PackageDescription
+
+/// Keeps only the paths this checkout actually has. SwiftPM warns about an
+/// exclude that does not exist, and some of these are deliberately absent -
+/// `CLAUDE.md` and `docs-internal` are gitignored, so a CI checkout has
+/// neither, and every build there printed a warning per missing path.
+func existing(_ paths: [String]) -> [String] {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
+    return paths.filter { FileManager.default.fileExists(atPath: "\(root)/\($0)") }
+}
 
 #if os(macOS)
 #error("Build OpenMila's macOS variant from upstream's project.yml; this manifest targets Linux and Windows.")
@@ -177,7 +187,7 @@ let package = Package(
             // Rooted at the repository so the target can take upstream's tree
             // and the port twins together; `sources` keeps it to those two.
             path: ".",
-            exclude: [
+            exclude: existing([
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
@@ -186,6 +196,7 @@ let package = Package(
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
                 "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE", "UPSTREAM_VERSION", "packaging",
+                "diarization", "dist", "dagger.json",
                 // Apple-only or replaced by a twin under Port/.
                 "Mila/Views", "Mila/Resources", "Mila/Assets.xcassets",
                 "Mila/VoiceMemos/VoiceMemosLibrary.swift", "Mila/VoiceMemos/DirectoryWatcher.swift",
@@ -198,7 +209,7 @@ let package = Package(
                 "Mila/Dictation",
                 "Mila/Actions/QuickActionsController.swift", "Mila/Actions/DiagnosticReporter.swift",
                 "Mila/Models/KeychainHelper.swift", "Mila/Models/SystemCapabilities.swift",
-            ],
+            ]),
             sources: ["Mila", "Port/CoreTwins"],
             // -enable-testing: upstream's types are internal (Mila is one Xcode
             // module); the port's app is a second module and reaches them via
@@ -220,7 +231,7 @@ let package = Package(
             // Rooted at the repository for the same reason as the core: it takes
             // upstream's tests in place plus the port's TestSupport twin.
             path: ".",
-            exclude: [
+            exclude: existing([
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
                 "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/WindowsPlatform", "docs",
@@ -228,6 +239,8 @@ let package = Package(
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",
                 "SECURITY.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE", "UPSTREAM_VERSION", "packaging",
+                "diarization", "dist", "dagger.json",
+                "diarization", "dist", "dagger.json",
                 // Tests of Apple-bound code; the list shrinks as twins land.
                 // Fixture manifests carry only darwin keys; the port asks for linux/win32 keys.
                 "MilaTests/ClaudeBinaryInstallerTests.swift", "MilaTests/ClaudeManagedInstallTests.swift",
@@ -290,7 +303,7 @@ let package = Package(
                 "MilaTests/VoiceRecognitionGateTests.swift",
                 "MilaTests/WAVHeaderRepairTests.swift",
                 "MilaTests/WindowChromeExemptionTests.swift",
-            ],
+            ]),
             sources: ["MilaTests", "Port/Tests/MilaTestsSupport"],
             swiftSettings: [.unsafeFlags(["-swift-version", "5"])]
         ),
