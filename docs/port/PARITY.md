@@ -33,7 +33,7 @@ of it on a Windows desktop yet.
 | 5 | Pause and resume with the paused span absent from audio and timer | done - `RecordingTests` | written |
 | 6 | Folder and meeting name chosen at record start | done | written |
 | 7 | Adaptive gain control for quiet mics | done - upstream's `AdaptiveGainController`, vDSP calls behind the `Accelerate` shim | written |
-| 8 | Mic stall watchdog and app-audio restart with backoff | partial - upstream's `CaptureStallDetector` logic is in the core; device-change events from miniaudio are not wired to it | partial - same |
+| 8 | Mic stall watchdog and app-audio restart with backoff | done - the session watches the frame count every second and restarts a capture that stops moving, with upstream's timeout and its backoff, and reports it when the device cannot be reopened. Upstream's policy types were not compiled off macOS at all before this (`CaptureWatchdogTests`) | done - the same code, one watchdog for both systems |
 | 9 | Mic bring-up timeout with an error that names the device | done | written |
 | 10 | Refuse to transcribe an empty capture, duration read from the file | done | written |
 | 11 | AAC `.m4a` recordings | done - ffmpeg where it is installed, GStreamer otherwise, which a GNOME or KDE install almost always has. Proven by a round trip: WAV to AAC and back transcribes to the same sentence | partial - the same two routes are tried, but neither ships in the zip, so it depends on what the machine has |

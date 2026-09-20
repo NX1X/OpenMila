@@ -129,3 +129,74 @@ final class RecordingSessionTests: XCTestCase {
         try? FileManager.default.removeItem(at: url)
     }
 }
+
+/// The watchdog policy: upstream's types, brought into the port because the
+/// file that holds them upstream is excluded from this build. These test the
+/// policy exactly, with an injected clock and no sleeping.
+final class CaptureWatchdogTests: XCTestCase {
+    private let start = Date(timeIntervalSince1970: 1_000_000)
+
+    func test_a_moving_frame_count_is_never_a_stall() {
+        var detector = CaptureStallDetector(timeout: 12)
+        XCTAssertFalse(detector.observe(frames: 0, now: start))
+        for second in 1...30 {
+            let moved = detector.observe(frames: second * 160,
+                                         now: start.addingTimeInterval(Double(second)))
+            XCTAssertFalse(moved, "a device delivering audio must never look stalled")
+        }
+    }
+
+    func test_a_frozen_frame_count_trips_exactly_at_the_timeout() {
+        var detector = CaptureStallDetector(timeout: 12)
+        _ = detector.observe(frames: 1000, now: start)
+        XCTAssertFalse(detector.observe(frames: 1000, now: start.addingTimeInterval(11.9)))
+        XCTAssertTrue(detector.observe(frames: 1000, now: start.addingTimeInterval(12)))
+    }
+
+    /// A device that opens and never delivers a single buffer is the case
+    /// upstream's comment calls out: arming on the first observation is what
+    /// makes that trip rather than wait forever.
+    func test_a_device_that_never_delivers_anything_still_trips() {
+        var detector = CaptureStallDetector(timeout: 5)
+        XCTAssertFalse(detector.observe(frames: 0, now: start))
+        XCTAssertTrue(detector.observe(frames: 0, now: start.addingTimeInterval(5)))
+    }
+
+    func test_reset_times_the_next_stall_from_the_restart() {
+        var detector = CaptureStallDetector(timeout: 5)
+        _ = detector.observe(frames: 10, now: start)
+        XCTAssertTrue(detector.observe(frames: 10, now: start.addingTimeInterval(5)))
+        detector.reset()
+        XCTAssertFalse(detector.observe(frames: 10, now: start.addingTimeInterval(5.1)),
+                       "the clock restarts with the device, not with the dead one's last buffer")
+        XCTAssertTrue(detector.observe(frames: 10, now: start.addingTimeInterval(10.2)))
+    }
+
+    func test_the_first_restart_is_immediate_and_the_rest_back_off() {
+        var throttle = RebuildThrottle(minimumInterval: 1, maximumInterval: 30)
+        XCTAssertTrue(throttle.allow(now: start), "the first trouble in a session is acted on at once")
+        XCTAssertFalse(throttle.allow(now: start.addingTimeInterval(0.5)))
+        XCTAssertTrue(throttle.allow(now: start.addingTimeInterval(1)))
+        XCTAssertFalse(throttle.allow(now: start.addingTimeInterval(2.5)))
+        XCTAssertTrue(throttle.allow(now: start.addingTimeInterval(3)))
+    }
+
+    func test_the_backoff_saturates_rather_than_growing_without_end() {
+        var throttle = RebuildThrottle(minimumInterval: 1, maximumInterval: 8)
+        var now = start
+        for _ in 0..<12 {
+            while !throttle.allow(now: now) { now = now.addingTimeInterval(0.5) }
+            now = now.addingTimeInterval(0.1)
+        }
+        XCTAssertEqual(throttle.currentInterval, 8, "the ladder must stop at the ceiling")
+    }
+
+    func test_a_quiet_spell_ends_the_burst() {
+        var throttle = RebuildThrottle(minimumInterval: 1, maximumInterval: 4)
+        XCTAssertTrue(throttle.allow(now: start))
+        XCTAssertTrue(throttle.allow(now: start.addingTimeInterval(1)))
+        // An unrelated failure an hour later is not part of that burst.
+        XCTAssertTrue(throttle.allow(now: start.addingTimeInterval(3600)))
+        XCTAssertEqual(throttle.streak, 1)
+    }
+}
