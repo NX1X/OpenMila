@@ -26,6 +26,8 @@ mkdir -p "$STAGE/opt/openmila" "$STAGE/usr/bin" "$STAGE/usr/share/applications" 
 cp -r "$APPDIR/usr/bin/." "$STAGE/opt/openmila/"
 cp -r "$APPDIR/usr/lib" "$STAGE/opt/openmila/lib"
 cp "$APPDIR/usr/share/applications/io.github.nx1x.openmila.desktop" "$STAGE/usr/share/applications/"
+mkdir -p "$STAGE/usr/share/mime/packages"
+cp "$APPDIR/usr/share/mime/packages/io.github.nx1x.openmila.xml" "$STAGE/usr/share/mime/packages/"
 # Every size the AppDir carries, not just 256: the icon cache and the panels
 # that ask for 16 or 24 pixels should get a file drawn at that size.
 for dir in "$APPDIR"/usr/share/icons/hicolor/*/apps; do
@@ -76,6 +78,9 @@ fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -q /usr/share/icons/hicolor || true
 fi
+if command -v update-mime-database >/dev/null 2>&1; then
+  update-mime-database /usr/share/mime || true
+fi
 POSTINST
 chmod 755 "$STAGE/DEBIAN/postinst"
 
@@ -90,6 +95,9 @@ if command -v update-desktop-database >/dev/null 2>&1; then
 fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -q /usr/share/icons/hicolor || true
+fi
+if command -v update-mime-database >/dev/null 2>&1; then
+  update-mime-database /usr/share/mime || true
 fi
 POSTRM
 chmod 755 "$STAGE/DEBIAN/postrm"

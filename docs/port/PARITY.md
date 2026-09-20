@@ -36,7 +36,7 @@ of it on a Windows desktop yet.
 | 8 | Mic stall watchdog and app-audio restart with backoff | partial - upstream's `CaptureStallDetector` logic is in the core; device-change events from miniaudio are not wired to it | partial - same |
 | 9 | Mic bring-up timeout with an error that names the device | done | written |
 | 10 | Refuse to transcribe an empty capture, duration read from the file | done | written |
-| 11 | AAC `.m4a` recordings | partial - `AudioCompressor` twin shells out to ffmpeg when present, WAV otherwise | planned - Media Foundation encoder not written |
+| 11 | AAC `.m4a` recordings | done - ffmpeg where it is installed, GStreamer otherwise, which a GNOME or KDE install almost always has. Proven by a round trip: WAV to AAC and back transcribes to the same sentence | partial - the same two routes are tried, but neither ships in the zip, so it depends on what the machine has |
 | 12 | Configurable recordings directory | done - plain paths, no security-scoped bookmarks | written |
 | 13 | Storage cap, respected by dictation | done - upstream code, unchanged | written |
 | 14 | Auto-discard accidental clips | done - upstream code, unchanged | written |
@@ -119,7 +119,7 @@ of it on a Windows desktop yet.
 | # | Feature | Linux | Windows |
 |---|---|---|---|
 | 63 | iPhone Voice Memos sync | done as watched folders - the same start-date and destination rules over any synced directory (iCloud discovery is macOS-only); inotify watcher, per-folder toggles | written - `ReadDirectoryChangesW` |
-| 64 | `.milaconfig` one-click team setup | partial - in-app import works; no `.desktop` MIME association yet | partial - the app reads a path from argv; no file association yet |
+| 64 | `.milaconfig` one-click team setup | done - the packages declare `application/x-milaconfig` with a `*.milaconfig` glob and refresh the MIME database on install and removal, so a double-click opens OpenMila; `update-mime-database` accepts the definition | partial - the app reads a path from argv; the installer has no file association yet |
 | 65 | Obsidian export and vault git sync | done - `git` from PATH | written |
 | 66 | MCP server with the consent gate | done - `openmila-mcp` through Claude Code: refused with consent off, listed recordings with it on | written - builds and ships in the Windows zip; nothing has run it there |
 | 67 | Self-hosted server docs | done - `docs/self-hosted-server`, `docs/openmila/REMOTE_SERVER.md` | done - same docs |
