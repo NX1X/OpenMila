@@ -193,6 +193,13 @@ public protocol MeetingSignals: Sendable {
     func activeMeetings() async -> [DetectedMeeting]
 }
 
+/// For a platform that cannot tell whether a meeting is running: no meeting is
+/// ever detected, so the prompt simply never appears.
+public struct NoMeetingSignals: MeetingSignals {
+    public init() {}
+    public func activeMeetings() async -> [DetectedMeeting] { [] }
+}
+
 /// Upstream: `SecurityFrameworkSignatureVerifier`. Must fail closed.
 public protocol BinaryTrust: Sendable {
     /// True only when the file is signed by the expected publisher.

@@ -111,7 +111,7 @@ final class AppModel {
         watchedImporter = VoiceMemosImporter(store: store, transcription: transcription,
                                              settings: watchedFolders, languageSettings: languageSettings)
         watchedImporter.start()
-        meetingPrompt = MeetingPrompt(signals: platform.meetings ?? LinuxMeetingSignals(), settings: meetingDetection,
+        meetingPrompt = MeetingPrompt(signals: platform.meetings ?? NoMeetingSignals(), settings: meetingDetection,
                                       notifier: platform.notifier, session: session)
         meetingPrompt.start()
         // `openmila file.milaconfig`: the file association hands the path in argv.
