@@ -103,8 +103,14 @@ public enum VulkanAvailability {
             return .none(reason: "\(libraryName) is not installed")
         }
         defer { FreeLibrary(library) }
+        // GetProcAddress hands back FARPROC, which Swift types as a function
+        // taking nothing and returning Int64. Every symbol below is called
+        // through its own signature, so the address is what matters.
         let symbol: (String) -> UnsafeMutableRawPointer? = { name in
-            name.withCString { GetProcAddress(library, $0).map { UnsafeMutableRawPointer($0) } }
+            name.withCString { cName in
+                guard let address = GetProcAddress(library, cName) else { return nil }
+                return unsafeBitCast(address, to: UnsafeMutableRawPointer?.self)
+            }
         }
         #else
         let libraryName = "libvulkan.so.1"
