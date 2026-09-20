@@ -21,6 +21,7 @@ build on macOS.
 |---|---|---|
 | `Mila/` | upstream | App logic, models, transcription, audio, views (views and Apple-bound files excluded from the Linux/Windows build) |
 | `Packages/MilaKit`, `Packages/TranscriptionCore` | upstream | Cross-platform packages, used unchanged |
+| `MilaMCP/` | upstream | The MCP helper's source, built as `openmila-mcp` |
 | `Port/Shims/` | port | Modules named `Combine`, `OSLog`, `os`, `CryptoKit`, `Accelerate`, `SwiftUI` so upstream imports compile off macOS |
 | `Port/CoreTwins/` | port | Replacements for excluded upstream files, compiled into the `Mila` module |
 | `Port/PlatformKit/` | port | Protocols between the core and each OS |

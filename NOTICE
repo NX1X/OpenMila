@@ -9,3 +9,14 @@ you may not use this software except in compliance with the License.
 You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
+
+----------------------------------------------------------------------
+
+OpenMila
+Copyright (c) 2026 NX1X
+
+OpenMila is a modified version of Mila (https://github.com/island-io/mila),
+ported to Linux and Windows. The notice above is Mila's and is kept as
+required by the Apache License, Version 2.0. Files of Mila that OpenMila
+modifies are listed in CHANGES.md. OpenMila is not affiliated with or
+endorsed by Island Technology, Inc.

@@ -26,6 +26,13 @@ APP_FLAGS=(--build-system native -j 3 "${FLAGS[@]}")
 
 log() { printf '\n==> %s\n' "$1"; }
 
+# Upstream's tests create a UserDefaults suite per test. On Linux, Foundation
+# stores each suite as a plist under $XDG_CONFIG_HOME, so without this the
+# suite litters ~/.config with hundreds of files. Tests get a throwaway one.
+OPENMILA_TEST_CONFIG="$(mktemp -d)"
+trap 'rm -rf "$OPENMILA_TEST_CONFIG"' EXIT
+export XDG_CONFIG_HOME="$OPENMILA_TEST_CONFIG"
+
 # Swift 6.4's build tool occasionally crashes while planning. That is not a
 # test result, so retry it; a real failure fails every attempt.
 retry() {
@@ -110,8 +117,9 @@ stage_port() {
 }
 
 stage_cli() {
-  log "openmila-cli and the openmila app build"
+  log "openmila-cli, openmila-mcp and the openmila app build"
   retry swift build --product openmila-cli "${FLAGS[@]}"
+  retry swift build --product openmila-mcp "${FLAGS[@]}"
   (cd Port/App && retry swift build --product openmila "${APP_FLAGS[@]}")
 }
 

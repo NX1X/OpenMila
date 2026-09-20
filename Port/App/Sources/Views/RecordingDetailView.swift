@@ -21,6 +21,11 @@ struct RecordingDetailView: View {
     @State var draftTitle = ""
     @State var tick = 0
     @State var notice: String?
+    @State var showSpeakerSheet = false
+    @State var speakerToName = ""
+    @State var speakerDraft = ""
+    @State var showNewFolder = false
+    @State var newFolderName = ""
 
     final class PlayerBox {
         var player: MiniaudioPlayer?
@@ -58,6 +63,14 @@ struct RecordingDetailView: View {
                         catch { notice = error.localizedDescription }
                     }
                     Button("Re-transcribe") { model.transcription.enqueue(recording, isRetranscription: true) }
+                    Button("Regenerate summary") { model.summarizer.regenerate(recording) }
+                    Menu("Move to folder") {
+                        Button("No folder") { moveTo(nil) }
+                        ForEach(model.store.folders, id: \.self) { name in
+                            Button(name) { moveTo(name) }
+                        }
+                        Button("New folder...") { newFolderName = ""; showNewFolder = true }
+                    }
                     if isTrashed {
                         Button("Restore") { model.store.restore(recording) }
                         Button("Delete permanently") { model.store.permanentlyDelete(recording) }
@@ -84,7 +97,13 @@ struct RecordingDetailView: View {
             if let summary = recording.summary, !summary.isEmpty {
                 Text("Summary").font(.headline)
                 Text(summary).font(.body).multilineTextAlignment(summary.isRTLText ? .trailing : .leading)
+                if let items = recording.actionItems, !items.isEmpty {
+                    Text("Action items").font(.headline)
+                    ForEach(items) { Text("- \($0.text)").font(.callout) }
+                }
                 Divider()
+            } else if model.summarizer.isSummarizing(recording.id) {
+                Text("Summarising...").font(.caption).foregroundColor(Theme.secondaryText)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -96,7 +115,12 @@ struct RecordingDetailView: View {
                         VStack(alignment: segment.text.isRTLText ? .trailing : .leading, spacing: 2) {
                             HStack {
                                 if let speaker = segment.speaker {
-                                    Text(speaker).font(.caption).foregroundColor(Theme.speakerColor(speaker))
+                                    Button(recording.speakerNames[speaker] ?? speaker) {
+                                        speakerToName = speaker
+                                        speakerDraft = recording.speakerNames[speaker] ?? ""
+                                        showSpeakerSheet = true
+                                    }
+                                    .foregroundColor(Theme.speakerColor(speaker))
                                 }
                                 Text(Self.clock(segment.start)).font(.caption).foregroundColor(Theme.secondaryText)
                             }
@@ -121,12 +145,65 @@ struct RecordingDetailView: View {
                 }
             }.padding().frame(minWidth: 380)
         }
+        .sheet(isPresented: $showSpeakerSheet) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Name speaker \(speakerToName)").font(.title3)
+                TextField("Name", text: $speakerDraft)
+                let suggestions = model.speakerDirectory.matches(for: speakerDraft).prefix(6)
+                if !suggestions.isEmpty {
+                    HStack {
+                        ForEach(Array(suggestions), id: \.self) { name in
+                            Button(name) { speakerDraft = name }
+                        }
+                    }
+                }
+                HStack {
+                    Button("Cancel") { showSpeakerSheet = false }
+                    Button("Un-name") { applySpeakerName(nil); showSpeakerSheet = false }
+                    Button("Save") { applySpeakerName(speakerDraft); showSpeakerSheet = false }
+                }
+            }.padding().frame(minWidth: 420)
+        }
+        .sheet(isPresented: $showNewFolder) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("New folder").font(.title3)
+                TextField("Folder name", text: $newFolderName)
+                HStack {
+                    Button("Cancel") { showNewFolder = false }
+                    Button("Create and move") {
+                        if let created = model.store.createFolder(newFolderName) { moveTo(created) }
+                        showNewFolder = false
+                    }
+                }
+            }.padding().frame(minWidth: 380)
+        }
         .task {
             while true {
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 if player.player?.isPlaying == true { tick += 1 }
             }
         }
+    }
+
+    func moveTo(_ folder: String?) {
+        var updated = recording
+        updated.folder = folder
+        _ = model.store.update(updated)
+        notice = folder.map { "Moved to \($0)." } ?? "Removed from folder."
+    }
+
+    /// Upstream: SpeakerNamePicker. A name is remembered in the directory
+    /// and applied to every segment carrying this speaker id.
+    func applySpeakerName(_ name: String?) {
+        var updated = recording
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            updated.speakerNames.removeValue(forKey: speakerToName)
+        } else {
+            updated.speakerNames[speakerToName] = trimmed
+            _ = model.speakerDirectory.add(trimmed)
+        }
+        _ = model.store.update(updated)
     }
 
     static func clock(_ seconds: Double) -> String {

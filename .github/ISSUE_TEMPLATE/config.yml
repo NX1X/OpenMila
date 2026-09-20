@@ -1,1 +1,11 @@
 blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/NX1X/OpenMila/discussions
+    about: Ask a question or share an idea in Discussions.
+  - name: Using a Mac?
+    url: https://github.com/island-io/mila/issues
+    about: OpenMila is the Linux and Windows port. Mac issues belong to Mila.
+  - name: Website and contact
+    url: https://openmila.nx1xlab.dev
+    about: OpenMila's website; other contact options are at nx1xlab.dev/contact.

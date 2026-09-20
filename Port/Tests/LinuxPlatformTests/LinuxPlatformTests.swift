@@ -10,7 +10,7 @@ final class LinuxAppPathsTests: XCTestCase {
     func test_xdg_variables_win_over_defaults() {
         let paths = LinuxAppPaths(environment: ["XDG_DATA_HOME": "/tmp/xdg-data", "XDG_STATE_HOME": "/tmp/xdg-state"],
                                   home: URL(fileURLWithPath: "/home/u"))
-        XCTAssertEqual(paths.dataDirectory.path, "/tmp/xdg-data/openmila")
+        XCTAssertEqual(paths.dataDirectory.path, "/tmp/xdg-data/Mila")
         XCTAssertEqual(paths.logDirectory.path, "/tmp/xdg-state/openmila/logs")
         XCTAssertEqual(paths.cacheDirectory.path, "/home/u/.cache/openmila")
     }

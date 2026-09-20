@@ -5,6 +5,8 @@
 // platform services. Everything is `@MainActor`, as upstream's are.
 
 import AudioCapture
+import Dictation
+import Combine
 import Foundation
 import LinuxPlatform
 import OpenMilaLogging
@@ -18,10 +20,18 @@ enum AppIdentity {
     static let version = "1.9.5+port.0-dev"
     static let upstreamVersion = "1.9.5-beta.2"
     static let repository = "NX1X/OpenMila"
+    static let website = "https://openmila.nx1xlab.dev"
+}
+
+/// App-wide UI requests that menus raise and views present.
+@MainActor
+final class UIRequests: ObservableObject {
+    @Published var showAbout = false
 }
 
 @MainActor
 final class AppModel {
+    let ui = UIRequests()
     let platform: PlatformServices
     let store: RecordingStore
     let storageSettings: RecordingStorageSettings
@@ -35,6 +45,23 @@ final class AppModel {
     let llmSettings: LLMSettings
     let mcpAccess: MCPAccessSettings
     let audioInput: AudioInputSettings
+    let speakerDirectory: SpeakerDirectory
+    let voiceRecognition: VoiceRecognitionSettings
+    let speakerProfiles: SpeakerProfileStore
+    let meetingDetection: MeetingDetectionSettings
+    let watchedFolders: VoiceMemosSettings
+    let dictation: DictationController
+    let hotkeys: HotkeySettings
+    let liveAISettings: LiveAISettings
+    let configImporter: MilaConfigImporter
+    let whatsNewGate = WhatsNewGate()
+    let summarizer: RecordingSummarizer
+    let postRecording: PostRecordingCoordinator
+    let liveAI: LiveAISession
+    let watchedImporter: VoiceMemosImporter
+    let meetingPrompt: MeetingPrompt
+    private var liveFeed: AnyCancellable?
+    private var dictationStatus: AnyCancellable?
 
     init() {
         OpenMilaLog.install(processName: AppIdentity.name, version: AppIdentity.version)
@@ -56,10 +83,68 @@ final class AppModel {
         llmSettings = LLMSettings()
         mcpAccess = MCPAccessSettings()
         audioInput = AudioInputSettings()
+        speakerDirectory = SpeakerDirectory(directory: platform.paths.dataDirectory)
+        voiceRecognition = VoiceRecognitionSettings()
+        speakerProfiles = SpeakerProfileStore(directory: platform.paths.dataDirectory, settings: voiceRecognition)
+        meetingDetection = MeetingDetectionSettings()
+        watchedFolders = VoiceMemosSettings()
+        dictation = DictationController(microphone: platform.microphone, injector: platform.textInjector,
+                                        notifier: platform.notifier, store: store, transcription: transcription,
+                                        liveTranscriber: liveTranscriber, audioInput: audioInput)
+        hotkeys = HotkeySettings(hotkeys: platform.hotkeys)
+        liveAISettings = LiveAISettings()
+        configImporter = MilaConfigImporter(remote: remoteSettings, language: languageSettings,
+                                            liveAI: liveAISettings, diarization: diarizationSettings,
+                                            meetingDetection: meetingDetection)
+        summarizer = RecordingSummarizer(store: store, llmSettings: llmSettings, liveAISettings: liveAISettings)
+        postRecording = PostRecordingCoordinator(store: store, transcription: transcription, llm: llmSettings)
+        liveAI = LiveAISession(llmSettings: llmSettings, liveAISettings: liveAISettings)
+        summarizer.backfillIfNeeded()
+        watchedImporter = VoiceMemosImporter(store: store, transcription: transcription,
+                                             settings: watchedFolders, languageSettings: languageSettings)
+        watchedImporter.start()
+        meetingPrompt = MeetingPrompt(signals: platform.meetings ?? LinuxMeetingSignals(), settings: meetingDetection,
+                                      notifier: platform.notifier, session: session)
+        meetingPrompt.start()
+        // `openmila file.milaconfig`: the file association hands the path in argv.
+        if let path = CommandLine.arguments.dropFirst().first(where: { $0.hasSuffix(".milaconfig") }) {
+            configImporter.handleOpen(URL(fileURLWithPath: path))
+        }
+        // Upstream shows a floating, non-activating "pill" while dictating. A
+        // separate window here would take keyboard focus on Wayland, and the
+        // dictated text would then paste into the pill itself; desktop
+        // notifications never take focus, so the status goes there instead.
+        dictationStatus = dictation.$state
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [platform, hotkeys] state in
+                switch state {
+                case .recording(let lang):
+                    let chord = hotkeys.chord(for: lang).displayName
+                    platform.notifier.notify(title: "Dictating (\(lang == .english ? "English" : "Hebrew"))",
+                                             body: "Speak, then press \(chord) again to paste.")
+                case .transcribing:
+                    break
+                case .idle:
+                    break
+                }
+            }
+        Task { [dictation, hotkeys] in
+            await hotkeys.activate { language in Task { await dictation.toggle(language) } }
+        }
 
         session.onLiveSamples = { [liveTranscriber] samples in
             liveTranscriber.ingest(samples[samples.startIndex..<samples.endIndex])
         }
+    }
+
+    /// Upstream: the scheduled Sparkle poll feeding `WhatsNewPopup`.
+    func checkForWhatsNew() async -> WhatsNewUpdate? {
+        guard let updater = platform.updater else { return nil }
+        let beta = UserDefaults.standard.bool(forKey: "updates.betaChannel")
+        guard let update = try? await updater.check(includePrereleases: beta),
+              whatsNewGate.shouldShow(availableVersion: update.version) else { return nil }
+        return WhatsNewUpdate(displayVersion: update.version, releaseNotesHTML: update.releaseNotesMarkdown)
     }
 
     // MARK: Recording flow (upstream: QuickActionsController.startRecording / stopRecording)
@@ -75,10 +160,23 @@ final class AppModel {
         currentRecordingStart = Date()
         liveTranscriber.start(language: languageSettings.current.rawValue)
         platform.sleep.acquire(reason: "Recording")
+        if isLiveAIActive {
+            liveAI.start()
+            var lastFed = ""
+            liveFeed = liveTranscriber.$fullText
+                .receive(on: DispatchQueue.main)
+                .sink { [liveAI] text in
+                    if text != lastFed { lastFed = text; liveAI.feed(transcript: text) }
+                }
+        }
     }
 
     func stopRecording() {
         platform.sleep.release()
+        liveFeed?.cancel(); liveFeed = nil
+        let liveSummary = liveAI.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let liveItems = liveAI.actionItems
+        liveAI.cancel()
         guard let url = session.stop() else { return }
         _ = liveTranscriber.stop()
         let duration = (try? WAVReader.loadSamples(url: url).count).map { Double($0) / WhisperAudioFormat.sampleRate } ?? 0
@@ -101,11 +199,18 @@ final class AppModel {
             duration: duration,
             source: source,
             audioFileName: url.lastPathComponent,
-            language: languageSettings.current.rawValue
+            language: languageSettings.current.rawValue,
+            summary: liveSummary.isEmpty ? nil : liveSummary,
+            actionItems: liveItems.isEmpty ? nil : liveItems
         )
         store.add(recording)
         transcription.enqueue(recording)
+        postRecording.present(recording)
         currentRecordingURL = nil
+    }
+
+    var isLiveAIActive: Bool {
+        liveAISettings.enabled && liveAISettings.isLiveAIReady(llmConfigured: llmSettings.isConfigured)
     }
 
     static func defaultTitle(for date: Date) -> String {

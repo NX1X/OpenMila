@@ -86,7 +86,7 @@ public enum OpenMilaLog {
         }
     }
 
-    static var architecture: String {
+    public static var architecture: String {
         #if arch(x86_64)
         return "x86_64"
         #elseif arch(arm64)

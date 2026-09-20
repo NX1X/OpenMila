@@ -3,6 +3,7 @@
 // Port of `Mila/Views/SettingsView.swift`: a section sidebar with the same
 // sections in the same order. Voice Memos becomes Watched Folders.
 
+import Dictation
 import Foundation
 import PlatformKit
 import SwiftCrossUI
@@ -19,6 +20,17 @@ struct SettingsView: View {
     @State var storage: Observed<RecordingStorageSettings>
     @State var mcp: Observed<MCPAccessSettings>
     @State var audio: Observed<AudioInputSettings>
+    @State var directory: Observed<SpeakerDirectory>
+    @State var voice: Observed<VoiceRecognitionSettings>
+    @State var meetings: Observed<MeetingDetectionSettings>
+    @State var watched: Observed<VoiceMemosSettings>
+    @State var watchedPath = ""
+    @State var hotkeys: Observed<HotkeySettings>
+    @State var chordEN = ""
+    @State var chordHE = ""
+    @State var chordNotice = ""
+    @State var diagnosticsNotice = ""
+    @Environment(\.chooseFile) var chooseFile
     @State var betaUpdates = UserDefaults.standard.bool(forKey: "updates.betaChannel")
     @State var updateStatus = ""
     @State var devices: [AudioInputDevice] = []
@@ -37,6 +49,11 @@ struct SettingsView: View {
         _storage = State(wrappedValue: Observed(model.storageSettings))
         _mcp = State(wrappedValue: Observed(model.mcpAccess))
         _audio = State(wrappedValue: Observed(model.audioInput))
+        _directory = State(wrappedValue: Observed(model.speakerDirectory))
+        _voice = State(wrappedValue: Observed(model.voiceRecognition))
+        _meetings = State(wrappedValue: Observed(model.meetingDetection))
+        _watched = State(wrappedValue: Observed(model.watchedFolders))
+        _hotkeys = State(wrappedValue: Observed(model.hotkeys))
     }
 
     var body: some View {
@@ -54,8 +71,10 @@ struct SettingsView: View {
                         case "AI Provider": aiProvider
                         case "AI Features": aiFeatures
                         case "Storage": storageSection
-                        case "Watched Folders": Text("Watched folders arrive with the importer port.").font(.callout)
-                        default: Text("Coming with the next views.").font(.callout).foregroundColor(Theme.secondaryText)
+                        case "Speakers": speakersSection
+                        case "Meetings": meetingsSection
+                        case "Watched Folders": watchedSection
+                        default: EmptyView()
                         }
                     }.padding()
                 }
@@ -68,6 +87,70 @@ struct SettingsView: View {
             devices = (try? model.platform.microphone.inputDevices()) ?? []
             if let id = model.audioInput.preferredUID, let d = devices.first(where: { $0.id == id }) { deviceName = d.name }
             storageGB = model.storageSettings.limitGigabytes
+            watchedPath = model.watchedFolders.grantedFolderURL?.path ?? ""
+            chordEN = model.hotkeys.chord(for: .english).displayName
+            chordHE = model.hotkeys.chord(for: .hebrew).displayName
+        }
+    }
+
+    var speakersSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Speakers").font(.headline)
+            Toggle("Recognise the same speaker across recordings", isOn: Binding(
+                get: { voice.object.isEnabled }, set: { voice.object.isEnabled = $0 }))
+            Text("Off by default. When on, a named voice is labelled automatically in later recordings.")
+                .font(.caption).foregroundColor(Theme.secondaryText)
+            Button("Delete everything learned about voices") { model.speakerProfiles.deleteAllProfiles() }
+            Divider()
+            Text("Speaker directory").font(.headline)
+            if directory.object.names.isEmpty {
+                Text("Names you give speakers are remembered here.").font(.caption).foregroundColor(Theme.secondaryText)
+            }
+            ForEach(directory.object.names, id: \.self) { name in
+                HStack {
+                    Text(name).font(.callout)
+                    Button("Remove") { directory.object.remove(name) }
+                }
+            }
+        }
+    }
+
+    var meetingsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Meetings").font(.headline)
+            Toggle("Offer to record when a meeting app starts", isOn: Binding(
+                get: { meetings.object.enabled }, set: { meetings.object.enabled = $0 }))
+            Text("Detected by running process on Linux: Zoom and Microsoft Teams. Google Meet in a browser is not detectable on Wayland.")
+                .font(.caption).foregroundColor(Theme.secondaryText)
+        }
+    }
+
+    var watchedSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Watched Folders").font(.headline)
+            Text("Mila watches the folder iCloud syncs Voice Memos into. OpenMila watches any folder you sync recordings into (Syncthing, Nextcloud, a phone mount) and imports new audio files automatically.")
+                .font(.caption).foregroundColor(Theme.secondaryText)
+            Toggle("Import from the watched folder", isOn: Binding(
+                get: { watched.object.isEnabled }, set: { watched.object.isEnabled = $0 }))
+            HStack {
+                TextField("Folder path", text: $watchedPath)
+                Button("Use folder") {
+                    _ = model.watchedFolders.grantFolder(URL(fileURLWithPath: watchedPath))
+                }
+            }
+            if let granted = watched.object.grantedFolderURL {
+                Text("Watching: \(granted.path)").font(.caption).foregroundColor(Theme.success)
+                let library = VoiceMemosLibrary(recordingsDirectory: granted)
+                Toggle("Files directly in the folder", isOn: Binding(
+                    get: { watched.object.includeUnfiled }, set: { watched.object.includeUnfiled = $0 }))
+                ForEach((try? library.folders()) ?? [], id: \.uuid) { sub in
+                    Toggle("\(sub.name) (\(sub.count))", isOn: Binding(
+                        get: { watched.object.selectedFolderUUIDs.contains(sub.uuid) },
+                        set: { watched.object.setFolder(sub.uuid, selected: $0) }))
+                }
+                Text("Only files newer than the start date are imported, into the \"Voice Memos\" folder.")
+                    .font(.caption).foregroundColor(Theme.secondaryText)
+            }
         }
     }
 
@@ -91,10 +174,42 @@ struct SettingsView: View {
             }
             Divider()
             Text("Dictation hotkeys").font(.headline)
-            Text("Global shortcuts need an X11 session or a desktop that supports the GlobalShortcuts portal. Configuration arrives with the dictation port.")
+            HStack { Text("English").font(.callout); TextField("Ctrl+Alt+2", text: $chordEN); Button("Apply") { apply(.english, chordEN) } }
+            HStack { Text("Hebrew").font(.callout); TextField("Ctrl+Alt+3", text: $chordHE); Button("Apply") { apply(.hebrew, chordHE) } }
+            Button("Reset to defaults") { Task { await model.hotkeys.resetToDefault(.english); await model.hotkeys.resetToDefault(.hebrew); chordEN = model.hotkeys.chord(for: .english).displayName; chordHE = model.hotkeys.chord(for: .hebrew).displayName } }
+            Text(hotkeys.object.isAvailable
+                 ? "Write modifiers and a key: Ctrl, Alt, Shift, Super and a letter, digit, F-key, Space, Return, Escape or Tab. \(chordNotice)"
+                 : "Global shortcuts work on X11 sessions (and XWayland windows). On pure Wayland, use the Dictate buttons on Home.")
                 .font(.caption).foregroundColor(Theme.secondaryText)
             Divider()
+            Text("Team setup").font(.headline)
+            Button("Import a .milaconfig file...") {
+                Task {
+                    if let url = await chooseFile(title: "Open a Mila configuration") {
+                        model.configImporter.handleOpen(url)
+                        isPresented = false
+                    }
+                }
+            }
+            Divider()
+            Text("Diagnostics").font(.headline)
+            Button("Export diagnostic report") {
+                Task {
+                    do { diagnosticsNotice = "Saved \((try await Diagnostics.buildReport(model: model)).path)" }
+                    catch { diagnosticsNotice = error.localizedDescription }
+                }
+            }
+            Text(diagnosticsNotice.isEmpty ? "Settings with credentials redacted, recording shapes without titles, and the log files." : diagnosticsNotice)
+                .font(.caption).foregroundColor(Theme.secondaryText)
             Text("Logs: \(model.platform.paths.logDirectory.path)").font(.caption)
+        }
+    }
+
+    func apply(_ language: DictationLanguage, _ text: String) {
+        guard let chord = HotkeyChord.parse(text) else { chordNotice = "Could not read that combination."; return }
+        Task {
+            let ok = await model.hotkeys.setChord(chord, for: language)
+            chordNotice = ok ? "Saved \(chord.displayName)." : "\(chord.displayName) is taken by another application."
         }
     }
 
@@ -134,9 +249,9 @@ struct SettingsView: View {
             }
             Divider()
             Text("Backend").font(.headline)
-            Picker(of: TranscriptionBackend.allCases.map(\.rawValue), selection: Binding(
-                get: { remote.object.backend.rawValue },
-                set: { if let v = $0, let b = TranscriptionBackend(rawValue: v) { remote.object.backend = b } }))
+            Picker(of: TranscriptionBackend.allCases.map(\.displayName), selection: Binding(
+                get: { remote.object.backend.displayName },
+                set: { name in if let b = TranscriptionBackend.allCases.first(where: { $0.displayName == name }) { remote.object.backend = b } }))
             if remote.object.backend != .local {
                 TextField("Endpoint (https://.../v1)", text: Binding(get: { remote.object.endpoint }, set: { remote.object.endpoint = $0 }))
                 TextField("Model", text: Binding(get: { remote.object.model }, set: { remote.object.model = $0 }))

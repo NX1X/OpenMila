@@ -7,7 +7,15 @@ import SwiftCrossUI
 
 @main
 struct OpenMilaApp: App {
-    let model = AppModel()
+    let model: AppModel
+
+    init() {
+        if CommandLine.arguments.contains("--version") {
+            print("\(AppIdentity.name) \(AppIdentity.version) (Mila \(AppIdentity.upstreamVersion))")
+            exit(0)
+        }
+        model = AppModel()
+    }
 
     var body: some Scene {
         WindowGroup(AppIdentity.name) {
@@ -20,11 +28,7 @@ struct OpenMilaApp: App {
                 Button("Stop Recording") { model.stopRecording() }
             }
             CommandMenu("Help") {
-                Button("About \(AppIdentity.name)") {
-                    model.platform.notifier.notify(
-                        title: "\(AppIdentity.name) \(AppIdentity.version)",
-                        body: "A port of Mila \(AppIdentity.upstreamVersion) by Uri Harduf at Island. Not affiliated with Island Technology, Inc.")
-                }
+                Button("About \(AppIdentity.name)") { model.ui.showAbout = true }
             }
         }
     }

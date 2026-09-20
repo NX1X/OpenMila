@@ -34,7 +34,7 @@ let package = Package(
         // `swift test` never has to build the UI toolkit.
         .library(name: "OpenMilaCore", targets: [
             "Mila", "Combine", "OSLog", "os", "CryptoKit", "OpenMilaLogging",
-            "PlatformKit", "AudioCapture", "Recording", "Updater",
+            "PlatformKit", "AudioCapture", "Recording", "Updater", "Dictation",
         ]),
         .library(name: "OpenMilaLinux", targets: ["LinuxPlatform"]),
     ],
@@ -45,6 +45,8 @@ let package = Package(
         .package(url: "https://github.com/OpenCombine/OpenCombine.git", exact: "0.14.0"),
         .package(url: "https://github.com/apple/swift-log.git", exact: "1.15.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.2"),
+        // The MCP helper's SDK, pinned exactly as upstream's project.yml pins it.
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
     ],
     targets: [
         // MARK: Shims (Apple module names, open-source implementations)
@@ -89,6 +91,12 @@ let package = Package(
         .target(name: "AudioCapture", dependencies: ["CMiniaudio", "PlatformKit"], path: "Port/AudioCapture"),
         .target(name: "Recording", dependencies: ["PlatformKit"], path: "Port/Recording"),
         .target(name: "Updater", dependencies: ["PlatformKit"], path: "Port/Updater"),
+        .target(
+            name: "Dictation",
+            dependencies: ["Mila", "Combine", "PlatformKit", .product(name: "TranscriptionCore", package: "TranscriptionCore")],
+            path: "Port/Dictation",
+            swiftSettings: [.unsafeFlags(["-enable-testing"])]
+        ),
         .systemLibrary(name: "CX11", path: "Port/CX11", pkgConfig: "x11", providers: [.apt(["libx11-dev"])]),
         .target(
             name: "LinuxPlatform",
@@ -115,6 +123,29 @@ let package = Package(
             path: "Port/CLI"
         ),
 
+        // Headless end-to-end checks of the app's real code paths.
+        .executableTarget(
+            name: "openmila-selftest",
+            dependencies: ["Mila", "OpenMilaLogging", .product(name: "TranscriptionCore", package: "TranscriptionCore")],
+            path: "Port/SelfTest",
+            swiftSettings: [.unsafeFlags(["-enable-testing"])]
+        ),
+
+        // The MCP helper (`mila-mcp` upstream): upstream's MilaMCP source in
+        // place, MilaKit + the MCP SDK, same as project.yml's mila-mcp target.
+        .executableTarget(
+            name: "openmila-mcp",
+            dependencies: [
+                .product(name: "MilaKit", package: "MilaKit"),
+                .product(name: "MCP", package: "swift-sdk"),
+                // The SDK uses swift-crypto off macOS through a conditional
+                // dependency the build tool does not carry to the link step.
+                .product(name: "Crypto", package: "swift-crypto"),
+            ],
+            path: "MilaMCP",
+            swiftSettings: [.unsafeFlags(["-swift-version", "5"])]
+        ),
+
         // MARK: Upstream core, consumed in place
         //
         // Everything under Mila/ that is not tied to an Apple UI or capture
@@ -135,13 +166,14 @@ let package = Package(
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "docs",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
-                "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE",
+                "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE", "UPSTREAM_VERSION", "packaging",
                 // Apple-only or replaced by a twin under Port/.
-                "Mila/Views", "Mila/Resources", "Mila/Assets.xcassets", "Mila/VoiceMemos",
+                "Mila/Views", "Mila/Resources", "Mila/Assets.xcassets",
+                "Mila/VoiceMemos/VoiceMemosLibrary.swift", "Mila/VoiceMemos/DirectoryWatcher.swift",
                 "Mila/App",
                 "Mila/Audio/MicrophoneRecorder.swift", "Mila/Audio/SystemAudioRecorder.swift",
                 "Mila/Audio/AudioDeviceManager.swift", "Mila/Audio/InputLevelMonitor.swift",
@@ -176,11 +208,11 @@ let package = Package(
             exclude: [
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "docs",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",
-                "SECURITY.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE",
+                "SECURITY.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "NOTICE", "UPSTREAM_VERSION", "packaging",
                 // Tests of Apple-bound code; the list shrinks as twins land.
                 // Fixture manifests carry only darwin keys; the port asks for linux/win32 keys.
                 "MilaTests/ClaudeBinaryInstallerTests.swift", "MilaTests/ClaudeManagedInstallTests.swift",

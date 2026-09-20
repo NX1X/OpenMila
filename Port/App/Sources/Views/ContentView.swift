@@ -13,6 +13,22 @@ enum SidebarSection: Hashable {
     case dictations
     case trash
 
+    var folderName: String? {
+        if case .folder(let name) = self { return name }
+        return nil
+    }
+
+    /// Upstream's SF Symbols mapped to freedesktop icon names (see Icons.swift).
+    var icon: String {
+        switch self {
+        case .home: return AppIcon.home
+        case .all: return AppIcon.list
+        case .folder: return AppIcon.folder
+        case .dictations: return AppIcon.dictation
+        case .trash: return AppIcon.trash
+        }
+    }
+
     var title: String {
         switch self {
         case .home: return "Home"
@@ -31,11 +47,17 @@ struct ContentView: View {
     @State var section: SidebarSection? = .home
     @State var selectedRecording: UUID?
     @State var showSettings = false
+    @State var importer: Observed<MilaConfigImporter>
+    @State var whatsNew: WhatsNewUpdate?
+    @State var showWhatsNew = false
+    @State var ui: Observed<UIRequests>
 
     init(model: AppModel) {
         self.model = model
         _store = State(wrappedValue: Observed(model.store))
         _transcription = State(wrappedValue: Observed(model.transcription))
+        _importer = State(wrappedValue: Observed(model.configImporter))
+        _ui = State(wrappedValue: Observed(model.ui))
     }
 
     var visibleRecordings: [Recording] {
@@ -50,13 +72,13 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(store: store, section: $section, showSettings: $showSettings)
+            SidebarView(store: store, section: $section, showSettings: $showSettings, ui: ui)
                 .frame(minWidth: Theme.sidebarMinWidth)
         } content: {
             if section == .home {
                 HomeView(model: model, transcription: transcription)
             } else {
-                HistoryListView(recordings: visibleRecordings, transcription: transcription,
+                HistoryListView(model: model, recordings: visibleRecordings, transcription: transcription,
                                 selection: $selectedRecording, title: section?.title ?? "")
             }
         } detail: {
@@ -71,6 +93,74 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView(model: model, isPresented: $showSettings)
         }
+        .sheet(isPresented: Binding(get: { importer.object.pending != nil }, set: { if !$0 { model.configImporter.cancel() } })) {
+            MilaConfigConfirmationView(importer: importer)
+        }
+        .sheet(isPresented: Binding(get: { ui.object.showAbout }, set: { ui.object.showAbout = $0 })) {
+            AboutView(isPresented: Binding(get: { ui.object.showAbout }, set: { ui.object.showAbout = $0 }))
+        }
+        .sheet(isPresented: $showWhatsNew) {
+            WhatsNewPopup(update: whatsNew, onUpdate: {
+                if let v = whatsNew?.displayVersion { model.whatsNewGate.markSeen(version: v) }
+                showWhatsNew = false
+            }, onLater: {
+                if let v = whatsNew?.displayVersion { model.whatsNewGate.markSeen(version: v) }
+                showWhatsNew = false
+            })
+        }
+        .task {
+            if let update = await model.checkForWhatsNew() {
+                whatsNew = update
+                showWhatsNew = true
+            }
+        }
+    }
+}
+
+/// Port of `Mila/Views/MilaConfigConfirmationView.swift`.
+struct MilaConfigConfirmationView: View {
+    let importer: Observed<MilaConfigImporter>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let pending = importer.object.pending {
+                Text("Apply \(pending.sourceName)?").font(.title3)
+                Text("These settings will change. Anything not listed stays as it is.").font(.caption).foregroundColor(Theme.secondaryText)
+                ForEach(pending.changes) { change in
+                    HStack { Text(change.label).font(.callout); Spacer(); Text(change.value).font(.callout).foregroundColor(Theme.secondaryText) }
+                }
+                HStack {
+                    Button("Cancel") { importer.object.cancel() }
+                    Button("Apply") { importer.object.confirm() }
+                }
+            }
+            if let error = importer.object.errorMessage { Text(error).foregroundColor(Theme.danger).font(.callout) }
+        }.padding().frame(minWidth: 460)
+    }
+}
+
+/// Port of `Mila/Views/WhatsNewPopup.swift`: highlights of the newer version
+/// found by the scheduled check, with Update (opens the release page) or Later.
+struct WhatsNewPopup: View {
+    let update: WhatsNewUpdate?
+    let onUpdate: () -> Void
+    let onLater: () -> Void
+    @Environment(\.openURL) var openURL
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("What's New in \(AppIdentity.name) \(update?.displayVersion ?? "")").font(.title3)
+            ForEach(update?.highlights ?? [], id: \.self) { line in
+                Text("- \(line)").font(.callout)
+            }
+            HStack {
+                Button("Later") { onLater() }
+                Button("Open release page") {
+                    if let url = URL(string: "https://github.com/\(AppIdentity.repository)/releases/latest") { openURL(url) }
+                    onUpdate()
+                }
+            }
+        }.padding().frame(minWidth: 480)
     }
 }
 
@@ -78,6 +168,11 @@ struct SidebarView: View {
     let store: Observed<RecordingStore>
     @Binding var section: SidebarSection?
     @Binding var showSettings: Bool
+    let ui: Observed<UIRequests>
+    @State var showFolderSheet = false
+    @State var folderDraft = ""
+    @State var renamingFolder: String?
+    @State var trashNotice = ""
 
     var sections: [SidebarSection] {
         [.home, .all] + store.object.folders.map { .folder($0) } + [.dictations, .trash]
@@ -87,24 +182,94 @@ struct SidebarView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(AppIdentity.name).font(.headline).padding()
             List(sections, id: \.self, selection: $section) { item in
-                Text(item.title).font(.callout)
+                HStack(spacing: 8) {
+                    PlatformIcon(item.icon)
+                    Text(item.title).font(.callout)
+                }
+                .platformDropTarget(enabled: item.folderName != nil) { id in
+                    guard let name = item.folderName,
+                          var recording = store.object.recordings.first(where: { $0.id == id }) else { return }
+                    recording.folder = name
+                    _ = store.object.update(recording)
+                }
             }
             Spacer()
+            Menu("Folders") {
+                Button("New folder...") { renamingFolder = nil; folderDraft = ""; showFolderSheet = true }
+                if case .folder(let name) = section {
+                    Button("Rename \"\(name)\"...") { renamingFolder = name; folderDraft = name; showFolderSheet = true }
+                    Button("Delete \"\(name)\"") { store.object.deleteFolder(name); section = .all }
+                }
+                if section == .trash {
+                    Button("Empty Trash") {
+                        let n = store.object.emptyTrash()
+                        trashNotice = "Deleted \(n) recording\(n == 1 ? "" : "s")."
+                    }
+                }
+            }.padding([.leading, .trailing])
+            if !trashNotice.isEmpty { Text(trashNotice).font(.caption).padding([.leading, .trailing]) }
             Divider()
             HStack {
                 Button("Settings") { showSettings = true }
+                Button("About") { ui.object.showAbout = true }
                 Spacer()
                 Text(AppIdentity.version).font(.caption2).foregroundColor(Theme.secondaryText)
             }.padding()
+        }
+        .sheet(isPresented: $showFolderSheet) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(renamingFolder == nil ? "New folder" : "Rename folder").font(.title3)
+                TextField("Folder name", text: $folderDraft)
+                HStack {
+                    Button("Cancel") { showFolderSheet = false }
+                    Button("Save") {
+                        if let old = renamingFolder {
+                            if let renamed = store.object.renameFolder(old, to: folderDraft) { section = .folder(renamed) }
+                        } else if let created = store.object.createFolder(folderDraft) {
+                            section = .folder(created)
+                        }
+                        showFolderSheet = false
+                    }
+                }
+            }.padding().frame(minWidth: 380)
         }
     }
 }
 
 struct HistoryListView: View {
+    let model: AppModel
     let recordings: [Recording]
     let transcription: Observed<TranscriptionService>
     @Binding var selection: UUID?
     let title: String
+
+    /// Upstream: RecordingContextMenu.
+    func rowActions(_ recording: Recording) -> [ContextMenuItem] {
+        let store = model.store
+        if recording.deletedAt != nil {
+            return [
+                ContextMenuItem("Restore") { store.restore(recording) },
+                ContextMenuItem("Delete permanently", destructive: true) { store.permanentlyDelete(recording) },
+            ]
+        }
+        var items: [ContextMenuItem] = [
+            ContextMenuItem("Open") { selection = recording.id },
+            ContextMenuItem("Re-transcribe") { model.transcription.enqueue(recording, isRetranscription: true) },
+            ContextMenuItem("Regenerate summary") { model.summarizer.regenerate(recording) },
+        ]
+        if recording.folder != nil {
+            items.append(ContextMenuItem("Remove from folder") {
+                var updated = recording; updated.folder = nil; _ = store.update(updated)
+            })
+        }
+        for folder in store.folders where folder != recording.folder {
+            items.append(ContextMenuItem("Move to \(folder)") {
+                var updated = recording; updated.folder = folder; _ = store.update(updated)
+            })
+        }
+        items.append(ContextMenuItem("Move to Trash", destructive: true) { store.delete(recording) })
+        return items
+    }
 
     func status(_ recording: Recording) -> String {
         if transcription.object.activeRecordingID == recording.id {
@@ -132,6 +297,8 @@ struct HistoryListView: View {
                         Text("\(Self.dateText(recording.createdAt))  \(status(recording))")
                             .font(.caption).foregroundColor(Theme.secondaryText)
                     }
+                    .platformContextMenu(rowActions(recording))
+                    .platformDragSource(recording.id)
                 }
             }
         }
