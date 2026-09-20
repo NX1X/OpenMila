@@ -10,6 +10,9 @@ param(
     [string]$Version
 )
 $ErrorActionPreference = "Stop"
+
+# Swift and CMake both need the MSVC toolchain on PATH.
+. "$PSScriptRoot\..\..\scripts\port\vsdev.ps1"
 $root = Resolve-Path "$PSScriptRoot\..\.."
 if (-not $Version) {
     $Version = (Select-String -Path "$root\Port\App\Sources\AppModel.swift" -Pattern 'static let version = "([^"]+)"').Matches[0].Groups[1].Value

@@ -10,6 +10,9 @@ param(
     [switch]$App
 )
 $ErrorActionPreference = "Stop"
+
+# Swift and CMake both need the MSVC toolchain on PATH.
+. "$PSScriptRoot\vsdev.ps1"
 $root = Resolve-Path "$PSScriptRoot\..\.."
 Set-Location $root
 

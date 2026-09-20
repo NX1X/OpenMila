@@ -5,6 +5,9 @@
 param([Parameter(Mandatory = $true)][string]$Prefix)
 $ErrorActionPreference = "Stop"
 
+# Swift and CMake both need the MSVC toolchain on PATH.
+. "$PSScriptRoot\vsdev.ps1"
+
 $root = Resolve-Path "$PSScriptRoot\..\.."
 $src = Join-Path $root "Packages\TranscriptionCore\vendor\whisper.cpp"
 $pin = (Get-Content (Join-Path $root ".github\whisper-cpp-pin.txt")).Trim()
