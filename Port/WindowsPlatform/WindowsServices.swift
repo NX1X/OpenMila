@@ -15,32 +15,54 @@ import WinSDK
 public final class WindowsSleepInhibitor: SleepInhibitor, @unchecked Sendable {
     private let lock = NSLock()
     private var held = false
-    private let queue = DispatchQueue(label: "io.github.nx1x.openmila.sleep")
+    private let wake = DispatchSemaphore(value: 0)
+    private let ready = DispatchSemaphore(value: 0)
 
-    public init() {}
+    /// The execution state belongs to the thread that set it, and a dispatch
+    /// queue does not promise the same thread for two blocks, so acquiring on
+    /// one thread and releasing on another would leave the machine awake. One
+    /// thread owns the state for the object's lifetime instead; it lives as
+    /// long as the process, like the hotkey thread.
+    public init() {
+        let thread = Thread { [self] in run() }
+        thread.name = "io.github.nx1x.openmila.sleep"
+        thread.stackSize = 128 * 1024
+        thread.start()
+        ready.wait()
+    }
 
-    public func acquire(reason: String) {
-        lock.lock(); defer { lock.unlock() }
-        guard !held else { return }
-        held = true
-        queue.async {
-            _ = SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED)
-            // The state stays set for as long as this thread lives; the queue
-            // keeps one thread, so the next block runs on the same one.
+    private func run() {
+        ready.signal()
+        while true {
+            wake.wait()
+            let want = lock.withLock { held }
+            if want {
+                _ = SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED)
+            } else {
+                _ = SetThreadExecutionState(ES_CONTINUOUS)
+            }
         }
     }
 
-    public func release() {
-        lock.lock(); defer { lock.unlock() }
-        guard held else { return }
-        held = false
-        queue.async { _ = SetThreadExecutionState(ES_CONTINUOUS) }
+    public func acquire(reason: String) {
+        let changed = lock.withLock { () -> Bool in
+            guard !held else { return false }
+            held = true
+            return true
+        }
+        if changed { wake.signal() }
     }
 
-    public var isActive: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return held
+    public func release() {
+        let changed = lock.withLock { () -> Bool in
+            guard held else { return false }
+            held = false
+            return true
+        }
+        if changed { wake.signal() }
     }
+
+    public var isActive: Bool { lock.withLock { held } }
 
     deinit { release() }
 }
@@ -122,6 +144,8 @@ public final class WindowsNotifier: Notifier, @unchecked Sendable {
 /// Watches one directory with `ReadDirectoryChangesW`, coalescing bursts the
 /// way the Linux watcher does. Upstream: `DirectoryWatcher` (FSEvents).
 public final class WindowsFolderWatcher: FolderWatcher, @unchecked Sendable {
+    public enum Error: Swift.Error { case cannotWatch(String) }
+
     private let lock = NSLock()
     private var handle: HANDLE?
     private var thread: Thread?
@@ -143,7 +167,7 @@ public final class WindowsFolderWatcher: FolderWatcher, @unchecked Sendable {
                         DWORD(FILE_FLAG_BACKUP_SEMANTICS), nil)
         }
         guard let handle, handle != INVALID_HANDLE_VALUE else {
-            throw AudioCaptureError.deviceUnavailable("Cannot watch \(directory.lastPathComponent).")
+            throw Error.cannotWatch(directory.lastPathComponent)
         }
         lock.withLock {
             self.handle = handle
@@ -185,8 +209,13 @@ public final class WindowsFolderWatcher: FolderWatcher, @unchecked Sendable {
             self.handle = nil
             return value
         }
-        // Closing the handle makes the blocked ReadDirectoryChangesW return.
-        if let handle { CloseHandle(handle) }
+        // CancelIoEx unblocks the synchronous ReadDirectoryChangesW on the
+        // watcher thread; closing the handle alone would race that thread
+        // against whoever is handed the same handle value next.
+        if let handle {
+            CancelIoEx(handle, nil)
+            CloseHandle(handle)
+        }
         thread = nil
     }
 

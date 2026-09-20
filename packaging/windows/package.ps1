@@ -21,10 +21,13 @@ $out = Join-Path $root "dist"
 $stage = Join-Path $out "OpenMila-$Version-win64"
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-$flags = @("-c", "release", "-Xcc", "-I$Prefix\include", "-Xlinker", "-L$Prefix\lib")
+# link.exe takes /LIBPATH:, not -L.
+$flags = @("-c", "release", "-Xcc", "-I$Prefix\include", "-Xlinker", "/LIBPATH:$Prefix\lib")
 Push-Location $root
 swift build @flags --product openmila-cli
+if ($LASTEXITCODE -ne 0) { throw "openmila-cli build failed" }
 swift build @flags --product openmila-mcp
+if ($LASTEXITCODE -ne 0) { throw "openmila-mcp build failed" }
 $rootBin = (swift build @flags --show-bin-path | Select-Object -Last 1)
 Pop-Location
 
