@@ -39,6 +39,20 @@ jobs:
           persist-credentials: false
           submodules: recursive
 
+      # Upstream tracks CLAUDE.md and .claude/, so an upstream merge puts them
+      # back unless the merge removes them again. This catches that before the
+      # local editor configuration reaches a public repository.
+      - name: Claude Code files stay out of the repository
+        timeout-minutes: 2
+        run: |
+          tracked=$(git ls-files 'CLAUDE.md' '.claude/*' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::these are local-only files and must not be tracked:"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "no Claude Code files are tracked"
+
       - name: Install the Dagger CLI (pinned, checksum verified)
         timeout-minutes: 5
         run: |
