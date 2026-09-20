@@ -293,15 +293,19 @@ void om_process_loopback_stop(om_process_loopback *capture) {
 }
 
 const char *om_process_loopback_error(int32_t error) {
-    switch ((HRESULT)error) {
+    HRESULT hr = (HRESULT)error;
+    // HRESULT_FROM_WIN32 is an inline function here, not a constant, so these
+    // two cannot be case labels.
+    if (hr == HRESULT_FROM_WIN32(WAIT_TIMEOUT)) return "the audio engine did not answer";
+    if (hr == HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) return "that application is no longer running";
+
+    switch (hr) {
     case S_OK: return "no error";
     case E_INVALIDARG: return "the capture was asked for an impossible format";
     case E_OUTOFMEMORY: return "out of memory";
     case AUDCLNT_E_DEVICE_INVALIDATED: return "the audio device went away";
     case AUDCLNT_E_SERVICE_NOT_RUNNING: return "the Windows audio service is not running";
     case AUDCLNT_E_UNSUPPORTED_FORMAT: return "the audio engine refused 16 kHz mono float";
-    case HRESULT_FROM_WIN32(WAIT_TIMEOUT): return "the audio engine did not answer";
-    case HRESULT_FROM_WIN32(ERROR_NOT_FOUND): return "that application is no longer running";
     default: return "the audio engine refused the request";
     }
 }
