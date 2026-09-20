@@ -7,7 +7,11 @@
 #   packaging\windows\package.ps1 -Prefix C:\path\to\whisper-prefix [-Version 1.9.5+port.0]
 param(
     [Parameter(Mandatory = $true)][string]$Prefix,
-    [string]$Version
+    [string]$Version,
+    # Release is what a real package ships. CI passes debug so the zip step
+    # reuses the build the earlier steps already made, instead of compiling
+    # the whole UI toolkit a second time.
+    [ValidateSet("debug", "release")][string]$Configuration = "release"
 )
 $ErrorActionPreference = "Stop"
 
@@ -22,7 +26,7 @@ $stage = Join-Path $out "OpenMila-$Version-win64"
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 # link.exe takes /LIBPATH:, not -L.
-$flags = @("-c", "release", "-Xcc", "-I$Prefix\include", "-Xlinker", "/LIBPATH:$Prefix\lib")
+$flags = @("-c", $Configuration, "-Xcc", "-I$Prefix\include", "-Xlinker", "/LIBPATH:$Prefix\lib")
 Push-Location $root
 swift build @flags --product openmila-cli
 if ($LASTEXITCODE -ne 0) { throw "openmila-cli build failed" }
