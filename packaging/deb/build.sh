@@ -73,6 +73,21 @@ fi
 POSTINST
 chmod 755 "$STAGE/DEBIAN/postinst"
 
+# Removal refreshes the same caches. Nothing here touches the user's data:
+# recordings, transcripts and settings live under $HOME and survive an
+# uninstall on purpose, as upstream's uninstall instructions do.
+cat > "$STAGE/DEBIAN/postrm" <<'POSTRM'
+#!/bin/sh
+set -e
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database -q /usr/share/applications || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q /usr/share/icons/hicolor || true
+fi
+POSTRM
+chmod 755 "$STAGE/DEBIAN/postrm"
+
 dpkg-deb --build --root-owner-group "$STAGE" "$OUT/openmila_${DEB_VERSION}_amd64.deb" >/dev/null
 (cd "$OUT" && sha256sum "openmila_${DEB_VERSION}_amd64.deb" > "openmila_${DEB_VERSION}_amd64.deb.sha256")
 ls -la "$OUT/openmila_${DEB_VERSION}_amd64.deb"
