@@ -8,12 +8,27 @@
 
 import AudioCapture
 import Foundation
+#if os(Windows)
+import WindowsPlatform
+#else
 import LinuxPlatform
+#endif
 import OpenMilaLogging
 import Recording
 import Updater
 import PlatformKit
 import TranscriptionCore
+
+#if os(Windows)
+typealias HostPlatform = WindowsPlatform
+#else
+typealias HostPlatform = LinuxPlatform
+#endif
+
+/// The platform's services, built once and shared by the commands that poke at
+/// them. Going through `PlatformServices` rather than naming the Linux types
+/// keeps this harness identical on both systems.
+let host = HostPlatform.services(appVersion: "0.0.0-cli")
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
@@ -106,17 +121,18 @@ case "logs":
     }
 
 case "notify":
-    LinuxNotifier().notify(title: "OpenMila", body: args.dropFirst().joined(separator: " ").isEmpty ? "Notification test" : args.dropFirst().joined(separator: " "))
+    host.notifier.notify(title: "OpenMila", body: args.dropFirst().joined(separator: " ").isEmpty ? "Notification test" : args.dropFirst().joined(separator: " "))
     print("sent")
 
 case "inject":
     let text = args.dropFirst().joined(separator: " ")
-    let outcome = await LinuxTextInjector(notifier: LinuxNotifier()).inject(text.isEmpty ? "OpenMila dictation test" : text)
+    guard let injector = host.textInjector else { fail("this system has no text injector") }
+    let outcome = await injector.inject(text.isEmpty ? "OpenMila dictation test" : text)
     print("outcome: \(outcome)")
 
 case "inhibit":
     let seconds = Double(option("--seconds", in: args) ?? "5") ?? 5
-    let inhibitor = LinuxSleepInhibitor()
+    let inhibitor = host.sleep
     inhibitor.acquire(reason: "OpenMila CLI test")
     print("sleep inhibited for \(seconds)s (check: systemd-inhibit --list)")
     try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
@@ -124,7 +140,7 @@ case "inhibit":
     print("released")
 
 case "hotkey":
-    guard X11Hotkeys.isAvailable, let hotkeys = try? X11Hotkeys() else { fail("no X11 display for hotkeys") }
+    guard let hotkeys = host.hotkeys else { fail("this system has no global hotkeys (on Linux: no X11 display)") }
     let chord = HotkeyChord(key: option("--key", in: args) ?? "2", modifiers: [.control, .alt])
     let result = await hotkeys.register(id: "test", chord: chord) { print("pressed \(chord.displayName)") }
     print("register \(chord.displayName): \(result). Waiting 15s for presses...")
@@ -132,11 +148,12 @@ case "hotkey":
     await hotkeys.unregister(id: "test")
 
 case "meetings":
-    let found = await LinuxMeetingSignals().activeMeetings()
+    guard let signals = host.meetings else { fail("this system has no meeting detection") }
+    let found = await signals.activeMeetings()
     print(found.isEmpty ? "no meeting apps running" : found.map(\.appName).joined(separator: ", "))
 
 case "update-check":
-    let repo = option("--repo", in: args) ?? LinuxPlatform.repository
+    let repo = option("--repo", in: args) ?? HostPlatform.repository
     let updater = GitHubReleasesUpdater(repository: repo, currentVersion: option("--current", in: args) ?? "0.0.0")
     do {
         if let update = try await updater.check(includePrereleases: args.contains("--beta")) {
