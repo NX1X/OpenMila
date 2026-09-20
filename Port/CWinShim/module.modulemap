@@ -1,0 +1,10 @@
+module CWinShim {
+    header "include/CWinShim.h"
+    link "user32"
+    link "shell32"
+    link "crypt32"
+    link "advapi32"
+    link "ole32"
+    link "wintrust"
+    export *
+}

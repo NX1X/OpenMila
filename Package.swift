@@ -37,6 +37,7 @@ let package = Package(
             "PlatformKit", "AudioCapture", "Recording", "Updater", "Dictation",
         ]),
         .library(name: "OpenMilaLinux", targets: ["LinuxPlatform"]),
+        .library(name: "OpenMilaWindows", targets: ["WindowsPlatform"]),
     ],
     dependencies: [
         .package(path: "Packages/MilaKit"),
@@ -100,8 +101,21 @@ let package = Package(
         .systemLibrary(name: "CX11", path: "Port/CX11", pkgConfig: "x11", providers: [.apt(["libx11-dev"])]),
         .target(
             name: "LinuxPlatform",
-            dependencies: ["PlatformKit", "AudioCapture", "Updater", "CX11"],
+            dependencies: [
+                "PlatformKit", "AudioCapture", "Updater",
+                .target(name: "CX11", condition: .when(platforms: [.linux])),
+            ],
             path: "Port/LinuxPlatform"
+        ),
+        // Windows headers Swift's WinSDK module does not expose.
+        .systemLibrary(name: "CWinShim", path: "Port/CWinShim"),
+        .target(
+            name: "WindowsPlatform",
+            dependencies: [
+                "PlatformKit", "AudioCapture", "Updater",
+                .target(name: "CWinShim", condition: .when(platforms: [.windows])),
+            ],
+            path: "Port/WindowsPlatform"
         ),
         .testTarget(
             name: "LinuxPlatformTests",
@@ -118,6 +132,7 @@ let package = Package(
             dependencies: [
                 "AudioCapture", "PlatformKit", "OpenMilaLogging", "Recording", "Updater",
                 .target(name: "LinuxPlatform", condition: .when(platforms: [.linux])),
+                .target(name: "WindowsPlatform", condition: .when(platforms: [.windows])),
                 .product(name: "TranscriptionCore", package: "TranscriptionCore"),
             ],
             path: "Port/CLI"
@@ -166,7 +181,7 @@ let package = Package(
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/WindowsPlatform", "docs",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
@@ -208,7 +223,7 @@ let package = Package(
             exclude: [
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/WindowsPlatform", "docs",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",
