@@ -137,26 +137,64 @@ public struct SecretServiceStore: SecretStore {
 }
 
 /// The secret store the Linux platform hands out: the desktop keyring when one
-/// is running, files with 0600 permissions when none is. Which one is in use
-/// is decided once, so a keyring that goes away mid-session does not silently
-/// split secrets across two places.
-public struct LinuxSecretStore: SecretStore {
-    private let backing: SecretStore
-    public let usesKeyring: Bool
+/// is running and working, and files with owner-only permissions when it is
+/// not.
+///
+/// "Working" cannot be decided once at startup. A container has libsecret and
+/// a session bus but no keyring daemon behind it, so the lookup that probes
+/// for a service succeeds while the first write fails; CI found exactly that.
+/// So the keyring is tried, and the first failure of any kind moves this store
+/// to files for the rest of the session. Secrets never end up split across the
+/// two: a value is only ever written to one, and reads try the keyring first,
+/// then the files.
+public final class LinuxSecretStore: SecretStore, @unchecked Sendable {
+    private let keyring = SecretServiceStore()
+    private let files: FileSecretStore
+    private let lock = NSLock()
+    private var keyringUsable: Bool
 
     public init(fallbackDirectory: URL) {
-        if SecretServiceStore.isAvailable {
-            backing = SecretServiceStore()
-            usesKeyring = true
-        } else {
-            backing = FileSecretStore(directory: fallbackDirectory)
-            usesKeyring = false
-        }
+        files = FileSecretStore(directory: fallbackDirectory)
+        keyringUsable = SecretServiceStore.isAvailable
     }
 
-    public func save(key: String, value: String) throws { try backing.save(key: key, value: value) }
-    public func load(key: String) -> String? { backing.load(key: key) }
-    public func delete(key: String) throws { try backing.delete(key: key) }
-    public func isAbsent(key: String) -> Bool { backing.isAbsent(key: key) }
+    /// True while the keyring is still in use. Diagnostics report it so a user
+    /// can see where their keys went.
+    public var usesKeyring: Bool { lock.withLock { keyringUsable } }
+
+    private func demoteKeyring(_ error: Swift.Error) {
+        lock.withLock { keyringUsable = false }
+        FileHandle.standardError.write(Data(
+            "openmila: the system keyring refused a request, falling back to files for this session (\(error))\n".utf8))
+    }
+
+    public func save(key: String, value: String) throws {
+        if usesKeyring {
+            do {
+                try keyring.save(key: key, value: value)
+                return
+            } catch {
+                demoteKeyring(error)
+            }
+        }
+        try files.save(key: key, value: value)
+    }
+
+    public func load(key: String) -> String? {
+        if usesKeyring, let value = keyring.load(key: key) { return value }
+        return files.load(key: key)
+    }
+
+    public func delete(key: String) throws {
+        // Both, so a value written before a demotion cannot survive a delete.
+        if usesKeyring {
+            do { try keyring.delete(key: key) } catch { demoteKeyring(error) }
+        }
+        try files.delete(key: key)
+    }
+
+    public func isAbsent(key: String) -> Bool {
+        load(key: key) == nil
+    }
 }
 #endif
