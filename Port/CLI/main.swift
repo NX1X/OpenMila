@@ -200,6 +200,13 @@ case "hotkey":
     try? await Task.sleep(nanoseconds: 15_000_000_000)
     await hotkeys.unregister(id: "test")
 
+case "windows":
+    // What the window-title signal can see on this session. Empty on a pure
+    // Wayland session by design: a client cannot see another client's windows.
+    let titles = X11WindowTitles.all()
+    print("window titles visible: \(titles.count)")
+    for title in titles.prefix(25) { print("  \(title)") }
+
 case "meetings":
     guard let signals = host.meetings else { fail("this system has no meeting detection") }
     let found = await signals.activeMeetings()
@@ -259,5 +266,5 @@ case "transcribe":
     } catch { fail("\(error.localizedDescription)") }
 
 default:
-    print("usage: openmila-cli devices | app-audio | gpu | logs | play | notify | inject | inhibit | hotkey | meetings | update-check | session | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
+    print("usage: openmila-cli devices | app-audio | gpu | windows | logs | play | notify | inject | inhibit | hotkey | meetings | update-check | session | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
 }

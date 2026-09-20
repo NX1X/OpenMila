@@ -255,4 +255,41 @@ final class PipeWireGraphTests: XCTestCase {
         ])))
     }
 }
+/// Meeting detection from window titles. The title scan itself needs an X
+/// display, so the matching is a pure function and this tests that; the live
+/// path is exercised by `openmila-cli meetings` with a window open.
+final class MeetingTitleTests: XCTestCase {
+    func test_a_browser_tab_in_a_meeting_is_detected() {
+        let found = LinuxMeetingSignals.meetings(inTitles: [
+            "Google Meet - standup",
+            "Inbox (12) - Mail",
+        ])
+        XCTAssertEqual(found, [DetectedMeeting(appName: "Google Meet", appKey: "googleMeet")])
+    }
+
+    func test_the_meet_url_counts_too() {
+        let found = LinuxMeetingSignals.meetings(inTitles: ["meet.google.com/abc-defg-hij - Chromium"])
+        XCTAssertEqual(found.first?.appKey, "googleMeet")
+    }
+
+    func test_the_same_meeting_in_two_windows_is_reported_once() {
+        let found = LinuxMeetingSignals.meetings(inTitles: [
+            "Google Meet - standup", "Google Meet - standup",
+        ])
+        XCTAssertEqual(found.count, 1)
+    }
+
+    func test_ordinary_windows_are_not_meetings() {
+        let found = LinuxMeetingSignals.meetings(inTitles: [
+            "OpenMila", "Terminal", "meeting notes.md - Obsidian", "",
+        ])
+        XCTAssertTrue(found.isEmpty, "found \(found)")
+    }
+
+    /// A pure Wayland session sees no other client's windows, so the title
+    /// signal contributes nothing and the process signal stands alone.
+    func test_no_titles_means_no_title_detections() {
+        XCTAssertTrue(LinuxMeetingSignals.meetings(inTitles: []).isEmpty)
+    }
+}
 #endif

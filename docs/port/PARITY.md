@@ -42,7 +42,7 @@ of it on a Windows desktop yet.
 | 14 | Auto-discard accidental clips | done - upstream code, unchanged | written |
 | 15 | Sleep and screen-lock guard while recording | done - `gnome-session-inhibit`, `systemd-inhibit` fallback | written - `SetThreadExecutionState` |
 | 16 | Crash-recovered WAV header repair | done - upstream `WAVHeaderRepair`, `WAVHeaderRepairTests` runs off macOS | written |
-| 17 | Meeting detection (Zoom, Teams, Meet) with prompts to start and stop | partial - process names from `/proc`; window titles are unavailable on Wayland, so Meet in a browser is not detected | written - process names via `CreateToolhelp32Snapshot`; window titles not wired |
+| 17 | Meeting detection (Zoom, Teams, Meet) with prompts to start and stop | done on X11 and XWayland, partial on Wayland - native apps come from `/proc` on every session, and a meeting in a browser tab is found in the window title, which only X11 exposes. Verified live: a window titled "Google Meet - standup" is reported as Google Meet. A pure Wayland session cannot see another client's windows by design, so Meet in a tab is missed there | written - process names via `CreateToolhelp32Snapshot`; window titles not wired |
 | 18 | Live level meters and elapsed clock without re-rendering the app | done - `RecordingMeters`, observed by the leaf view only | written |
 
 ## Transcription
