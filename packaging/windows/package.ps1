@@ -84,6 +84,8 @@ Pop-Location
 
 Copy-Item "$rootBin\openmila-cli.exe", "$rootBin\openmila-mcp.exe" $stage
 if ($appBin) { Copy-Item "$appBin\openmila.exe" $stage }
+# Every ggml backend DLL, including ggml-vulkan.dll when the build had the
+# SDK: without it a machine with a graphics card quietly runs on the CPU.
 Copy-Item "$Prefix\bin\*.dll" $stage -ErrorAction SilentlyContinue
 Copy-Item "$Prefix\lib\*.dll" $stage -ErrorAction SilentlyContinue
 

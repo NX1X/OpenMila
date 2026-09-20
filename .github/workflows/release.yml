@@ -131,7 +131,19 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}\whisper-prefix
-          key: whisper-windows-${{ hashFiles('.github/whisper-cpp-pin.txt') }}
+          key: whisper-windows-vulkan-${{ hashFiles('.github/whisper-cpp-pin.txt', 'scripts/port/build-whisper.ps1') }}
+
+      # A release build must carry the GPU backend, so the SDK is not optional
+      # here the way it is for a developer's local build.
+      - name: Install the Vulkan SDK
+        if: steps.whisper-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 15
+        run: |
+          choco install vulkan-sdk --no-progress -y
+          $sdk = Get-ChildItem "C:\VulkanSDK" -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $sdk) { throw "the Vulkan SDK did not install; a release must ship the GPU backend" }
+          "VULKAN_SDK=$($sdk.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build whisper.cpp at the pinned commit
         if: steps.whisper-cache.outputs.cache-hit != 'true'
