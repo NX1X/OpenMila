@@ -182,6 +182,32 @@ private func attachDragSource(to widget: Gtk.Widget, payload: String) {
     gtk_widget_add_controller(widget.widgetPointer, source)
 }
 
+// MARK: - Window icon
+
+@MainActor
+private var iconSearchPathsAdded = false
+
+extension View {
+    /// Names the icon of the window this view is in, after pointing GTK's icon
+    /// theme at any directory where the app carries its own hicolor tree.
+    /// Setting a *name* rather than a file is what keeps the window, the task
+    /// switcher and the `.desktop` entry on the same artwork: all three resolve
+    /// `io.github.nx1x.openmila` through the theme. A system install is in the
+    /// theme already; an AppImage is not, hence the search paths.
+    func windowIcon(named name: String, searchPaths: [String]) -> some View {
+        inspectWindow { window in
+            if !iconSearchPathsAdded, let display = gdk_display_get_default(),
+               let theme = gtk_icon_theme_get_for_display(display) {
+                iconSearchPathsAdded = true
+                for path in searchPaths where FileManager.default.fileExists(atPath: path) {
+                    gtk_icon_theme_add_search_path(theme, path)
+                }
+            }
+            gtk_window_set_icon_name(cast(UnsafeMutableRawPointer(window.gobjectPointer)), name)
+        }
+    }
+}
+
 // MARK: - Icons
 
 /// An icon from the desktop's symbolic icon theme, sized like body text.

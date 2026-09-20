@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0. -->
+<!-- OpenMila single-colour lockup. Everything is currentColor, so the file
+     takes the colour of the text around it: set colour to ink on a light
+     background and to white on a dark one. The tile is dropped on purpose -
+     a solid tile cannot be knocked through in one colour, and the open ring
+     reads on any background without it. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 776 200" width="776" height="200"
+     role="img" aria-label="OpenMila">
+  <g id="mark" transform="translate(88,100) scale(0.66) translate(-128,-128)">
+    <circle cx="128" cy="128" r="80" fill="none" stroke="currentColor" stroke-width="20"
+            stroke-linecap="round" stroke-dasharray="410.5 92.15" stroke-dashoffset="456.58"/>
+    <rect x="84" y="100" width="24" height="56" rx="12" fill="currentColor"/>
+    <rect x="116" y="80" width="24" height="96" rx="12" fill="currentColor"/>
+    <rect x="148" y="100" width="24" height="56" rx="12" fill="currentColor"/>
+  </g>
+  <g id="wordmark" transform="translate(184,0)" fill="none" stroke="currentColor"
+     stroke-width="16" stroke-linecap="round">
+    <circle cx="44" cy="100" r="36"/>
+    <line x1="108" y1="82" x2="108" y2="172"/>
+    <circle cx="131" cy="113" r="23"/>
+    <circle cx="205" cy="113" r="23" stroke-dasharray="114.41 30.11" stroke-dashoffset="114.41"/>
+    <line x1="182" y1="113" x2="228" y2="113"/>
+    <line x1="256" y1="82" x2="256" y2="144"/>
+    <circle cx="279" cy="113" r="23" stroke-dasharray="72.26 72.26" stroke-dashoffset="72.26"/>
+    <line x1="302" y1="113" x2="302" y2="144"/>
+    <line x1="330" y1="144" x2="330" y2="56"/>
+    <line x1="330" y1="56" x2="372" y2="120"/>
+    <line x1="372" y1="120" x2="414" y2="56"/>
+    <line x1="414" y1="56" x2="414" y2="144"/>
+    <line x1="442" y1="82" x2="442" y2="144"/>
+    <circle cx="442" cy="58" r="9" fill="currentColor" stroke="none"/>
+    <line x1="472" y1="52" x2="472" y2="144"/>
+    <circle cx="525" cy="113" r="23"/>
+    <line x1="548" y1="82" x2="548" y2="144"/>
+  </g>
+</svg>

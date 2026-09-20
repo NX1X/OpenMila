@@ -97,7 +97,8 @@ struct ContentView: View {
             MilaConfigConfirmationView(importer: importer)
         }
         .sheet(isPresented: Binding(get: { ui.object.showAbout }, set: { ui.object.showAbout = $0 })) {
-            AboutView(isPresented: Binding(get: { ui.object.showAbout }, set: { ui.object.showAbout = $0 }))
+            AboutView(isPresented: Binding(get: { ui.object.showAbout }, set: { ui.object.showAbout = $0 }),
+                      markURL: model.platform.paths.resource(named: AppBranding.markFileName))
         }
         .sheet(isPresented: $showWhatsNew) {
             WhatsNewPopup(update: whatsNew, onUpdate: {
@@ -114,6 +115,7 @@ struct ContentView: View {
                 showWhatsNew = true
             }
         }
+        .platformWindowIcon(named: AppBranding.iconName, searchPaths: AppBranding.iconSearchPaths)
     }
 }
 

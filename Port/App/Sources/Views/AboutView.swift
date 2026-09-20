@@ -10,6 +10,11 @@ import SwiftCrossUI
 
 struct AboutView: View {
     @Binding var isPresented: Bool
+    /// The app's mark. Packaging puts `brand/icons/openmila-128.png` beside the
+    /// binaries as `openmila.png`, which is where `Bundle.main` looks off
+    /// macOS. A development build that has not linked resources passes nil and
+    /// the screen simply omits it.
+    var markURL: URL?
     @Environment(\.openURL) var openURL
 
     func link(_ title: String, _ url: String) -> some View {
@@ -19,9 +24,16 @@ struct AboutView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                Text(AppIdentity.name).font(.title2)
-                Text("Version \(AppIdentity.version), based on Mila \(AppIdentity.upstreamVersion)")
-                    .font(.callout).foregroundColor(Theme.secondaryText)
+                HStack(alignment: .center, spacing: 14) {
+                    if let markURL {
+                        Image(markURL).resizable().frame(width: 64, height: 64)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(AppIdentity.name).font(.title2)
+                        Text("Version \(AppIdentity.version), based on Mila \(AppIdentity.upstreamVersion)")
+                            .font(.callout).foregroundColor(Theme.secondaryText)
+                    }
+                }
 
                 Text("Based on Mila by Uri Harduf at Island, released under the Apache License 2.0. OpenMila ports it to Linux and Windows.")
                     .font(.body)
