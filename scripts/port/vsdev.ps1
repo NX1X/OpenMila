@@ -19,12 +19,31 @@ function Set-SwiftEnvironment {
     if (-not $swift) { return }
     # ...\Programs\Swift\Toolchains\<version>\usr\bin\swift.exe
     $swiftRoot = Split-Path (Split-Path (Split-Path (Split-Path (Split-Path $swift.Source -Parent) -Parent) -Parent) -Parent) -Parent
-    $sdk = Join-Path $swiftRoot "Platforms\Windows.platform\Developer\SDKs\Windows.sdk"
-    if (Test-Path $sdk) {
+    # The layout has a version directory in some releases and not in others
+    # (Platforms\Windows.platform\... vs Platforms\6.4.0\Windows.platform\...),
+    # so search for Windows.sdk instead of assuming one shape.
+    $platforms = Join-Path $swiftRoot "Platforms"
+    $sdk = $null
+    if (Test-Path $platforms) {
+        $sdk = Get-ChildItem $platforms -Directory -Filter "Windows.sdk" -Recurse -Depth 5 -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+    }
+    if ($sdk) {
         $env:SDKROOT = $sdk
         Write-Host "SDKROOT: $sdk"
+        # Swift's own auxiliary include/lib directories sit beside the SDK.
+        $devRoot = Split-Path (Split-Path $sdk -Parent) -Parent   # ...\Developer
+        foreach ($sub in @("Toolchains", "Library")) {
+            $extra = Join-Path $devRoot $sub
+            if (Test-Path $extra) { Write-Host "  found $extra" }
+        }
     } else {
         Write-Warning "no Windows.sdk under $swiftRoot; swift build will not find the standard library"
+        if (Test-Path $swiftRoot) {
+            Write-Host "Swift installation tree (2 levels):"
+            Get-ChildItem $swiftRoot -Directory -Depth 2 -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host "  $($_.FullName)" }
+        }
     }
     $runtimes = Join-Path $swiftRoot "Runtimes"
     if (Test-Path $runtimes) {
