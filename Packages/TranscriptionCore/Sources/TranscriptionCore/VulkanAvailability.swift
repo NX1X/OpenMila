@@ -23,6 +23,8 @@ import Foundation
 import Glibc
 #elseif canImport(Musl)
 import Musl
+#elseif os(Windows)
+import WinSDK
 #endif
 
 public enum VulkanAvailability {
@@ -92,20 +94,31 @@ public enum VulkanAvailability {
         if ProcessInfo.processInfo.environment["OPENMILA_DISABLE_GPU"] == "1" {
             return .none(reason: "OPENMILA_DISABLE_GPU=1")
         }
+        // The loader is opened by name at run time, never linked, so a build
+        // with the Vulkan backend still runs where Vulkan is absent. The two
+        // systems spell that differently and nothing else here differs.
         #if os(Windows)
         let libraryName = "vulkan-1.dll"
+        guard let library = LoadLibraryW(libraryName.withCString(encodedAs: UTF16.self) { $0 }) else {
+            return .none(reason: "\(libraryName) is not installed")
+        }
+        defer { FreeLibrary(library) }
+        let symbol: (String) -> UnsafeMutableRawPointer? = { name in
+            name.withCString { GetProcAddress(library, $0).map { UnsafeMutableRawPointer($0) } }
+        }
         #else
         let libraryName = "libvulkan.so.1"
-        #endif
         guard let library = dlopen(libraryName, RTLD_NOW) else {
             return .none(reason: "\(libraryName) is not installed")
         }
         defer { dlclose(library) }
+        let symbol: (String) -> UnsafeMutableRawPointer? = { dlsym(library, $0) }
+        #endif
 
-        guard let createSymbol = dlsym(library, "vkCreateInstance"),
-              let enumerateSymbol = dlsym(library, "vkEnumeratePhysicalDevices"),
-              let propertiesSymbol = dlsym(library, "vkGetPhysicalDeviceProperties"),
-              let destroySymbol = dlsym(library, "vkDestroyInstance") else {
+        guard let createSymbol = symbol("vkCreateInstance"),
+              let enumerateSymbol = symbol("vkEnumeratePhysicalDevices"),
+              let propertiesSymbol = symbol("vkGetPhysicalDeviceProperties"),
+              let destroySymbol = symbol("vkDestroyInstance") else {
             return .none(reason: "the Vulkan loader is missing its entry points")
         }
         let createInstance = unsafeBitCast(createSymbol, to: CreateInstance.self)
