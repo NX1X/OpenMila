@@ -15,7 +15,7 @@ public enum WindowsPlatform {
         let notifier = WindowsNotifier()
         return PlatformServices(
             microphone: MiniaudioMicrophone(),
-            appAudio: MiniaudioSystemLoopback(),
+            appAudio: WindowsAppAudioCapture(),
             hotkeys: WindowsHotkeys(),
             textInjector: WindowsTextInjector(notifier: notifier),
             secrets: WindowsSecretStore(directory: paths.dataDirectory.appendingPathComponent("secrets", isDirectory: true)),
