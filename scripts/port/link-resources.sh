@@ -15,3 +15,6 @@ mkdir -p "$DEST"
 for entry in ConnectionTestSample.wav ggml-silero-v5.1.2.bin DiarizationModels; do
   ln -sfn "$ROOT/Mila/Resources/$entry" "$DEST/$entry"
 done
+# The diarization Python runtime, when it has been built.
+[ -d "$ROOT/diarization/out/PythonRuntime" ] && ln -sfn "$ROOT/diarization/out/PythonRuntime" "$DEST/PythonRuntime"
+exit 0

@@ -60,3 +60,6 @@ Port/App/Package.resolved
 # Dagger generated SDK code
 ci/dagger/internal/
 ci/dagger/dagger.gen.go
+# Diarization runtime build output and cache
+diarization/out/
+diarization/cache/
