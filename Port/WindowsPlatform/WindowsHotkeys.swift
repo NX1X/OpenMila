@@ -104,10 +104,13 @@ public final class WindowsHotkeys: GlobalHotkeys, @unchecked Sendable {
         threadID = GetCurrentThreadId()
         var message = MSG()
         // Force the queue to exist before anyone posts to it.
-        PeekMessageW(&message, nil, UINT(WM_USER), UINT(WM_USER), UINT(PM_NOREMOVE))
+        _ = PeekMessageW(&message, nil, UINT(WM_USER), UINT(WM_USER), UINT(PM_NOREMOVE))
         ready.signal()
 
-        while GetMessageW(&message, nil, 0, 0) > 0 {
+        // Swift imports BOOL as Bool here, so the -1 error return is not
+        // visible; a false result ends the loop, which is what WM_QUIT does
+        // and what an error should do too.
+        while GetMessageW(&message, nil, 0, 0) {
             switch message.message {
             case UINT(WM_HOTKEY):
                 let hotkeyID = Int32(message.wParam)
