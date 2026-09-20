@@ -148,6 +148,8 @@ let package = Package(
                 .linkedLibrary("advapi32", .when(platforms: [.windows])),
                 .linkedLibrary("ole32", .when(platforms: [.windows])),
                 .linkedLibrary("wintrust", .when(platforms: [.windows])),
+                // ActivateAudioInterfaceAsync, for per-application capture.
+                .linkedLibrary("mmdevapi", .when(platforms: [.windows])),
             ]
         ),
         .target(

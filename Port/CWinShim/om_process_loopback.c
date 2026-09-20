@@ -7,7 +7,14 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define COBJMACROS
+// The interface GUIDs this file names (IID_IAudioClient and friends) live in
+// uuid.lib for C++ callers. Defining INITGUID before <initguid.h> makes the
+// SDK headers instantiate them here instead, which is the documented way to
+// use these interfaces from C and keeps the link line to libraries that are
+// about audio rather than about C++ name mangling.
+#define INITGUID
 #include <windows.h>
+#include <initguid.h>
 #include <audioclient.h>
 #include <audioclientactivationparams.h>
 #include <mmdeviceapi.h>
