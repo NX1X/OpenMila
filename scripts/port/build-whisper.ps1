@@ -27,9 +27,29 @@ if ($env:VULKAN_SDK -and (Test-Path $env:VULKAN_SDK)) {
     Write-Host "whisper.cpp: no Vulkan SDK (VULKAN_SDK is unset), building the CPU backend only"
 }
 
-cmake -S $src -B "$src\build-windows" -DCMAKE_BUILD_TYPE=Release `
+# Ninja, not the Visual Studio generator. ggml's Vulkan backend configures a
+# nested project to build its shader generator, and under the VS generator
+# that nested build runs without the INCLUDE and LIB the developer shell
+# exports, so cl.exe cannot compile even a trivial program:
+#
+#   The C compiler ... is not able to compile a simple test program
+#
+# Ninja passes the environment straight through, so the nested build sees the
+# same toolchain as the outer one. It is also single-config, which is why the
+# build and install steps below take no --config.
+$generator = @()
+if (Get-Command ninja -ErrorAction SilentlyContinue) {
+    $generator = @("-G", "Ninja")
+} else {
+    Write-Warning "ninja is not on PATH; falling back to the default generator, which cannot build the Vulkan shaders"
+}
+
+cmake -S $src -B "$src\build-windows" @generator -DCMAKE_BUILD_TYPE=Release `
   -DBUILD_SHARED_LIBS=ON -DWHISPER_BUILD_EXAMPLES=OFF -DWHISPER_BUILD_TESTS=OFF `
   -DGGML_NATIVE=OFF $vulkan -DCMAKE_INSTALL_PREFIX="$Prefix"
-cmake --build "$src\build-windows" --config Release -j
-cmake --install "$src\build-windows" --config Release
+if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
+cmake --build "$src\build-windows" -j
+if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
+cmake --install "$src\build-windows"
+if ($LASTEXITCODE -ne 0) { throw "cmake install failed" }
 Get-ChildItem "$Prefix\lib", "$Prefix\bin" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
