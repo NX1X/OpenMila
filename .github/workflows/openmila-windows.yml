@@ -15,6 +15,11 @@ on:
     branches: ["port/stage4-windows", "port/windows**"]
     paths-ignore: ["docs/**", "docs-internal/**", "**/*.md"]
   workflow_dispatch:
+    inputs:
+      diarization:
+        description: "Also build the diarization Python runtime (slow, ~2 GB of downloads)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -89,6 +94,13 @@ jobs:
 
       - name: Run the port's tests
         run: .\scripts\port\build-windows.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -Test
+
+      # Off by default: the runtime is about 2 GB of wheels, which is not worth
+      # downloading on every push. Run the workflow by hand with the input set
+      # when the bundle script or its pins change.
+      - name: Build the diarization Python runtime
+        if: inputs.diarization
+        run: .\diarization\build-bundle-windows.ps1
 
       - name: Build the desktop app
         run: .\scripts\port\build-windows.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -App
