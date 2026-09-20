@@ -86,7 +86,7 @@ evidence is direct. Windows work is behind it by design.
 | # | Feature | Linux | Windows |
 |---|---|---|---|
 | 43 | Providers: Claude, Cursor, Gemini CLIs and any OpenAI-compatible endpoint | done - real `claude` CLI produced a summary in 8 s | written - `.cmd` shims run through `cmd /c` |
-| 44 | Managed Claude install with checksum and signature checks | partial - `linux-x64` manifest key and checksum verified; the signature check is the port's `SignatureVerifier`, which fails closed rather than verifying a signature | written - `WinVerifyTrust` path, `win32-x64` key |
+| 44 | Managed Claude install with checksum and signature checks | partial - `linux-x64` manifest key and checksum verified; the signature check is the port's `SignatureVerifier`, which fails closed rather than verifying a signature | partial - `win32-x64` key, Authenticode verified with the signer's name checked; browser sign-in needs a real terminal until a ConPTY path replaces the POSIX pseudo-terminal |
 | 45 | Suggested recording names | done | written |
 | 46 | Automatic summary after each recording, backfill, regenerate, `.summary.txt` | done | written |
 | 47 | Send to LLM with a custom prompt | done | written |
