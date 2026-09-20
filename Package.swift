@@ -92,7 +92,15 @@ let package = Package(
         .target(
             name: "CMiniaudio",
             path: "Port/CMiniaudio",
-            cSettings: [.define("MA_NO_RUNTIME_LINKING", .when(platforms: [.windows]))],
+            cSettings: [
+                .define("MA_NO_RUNTIME_LINKING", .when(platforms: [.windows])),
+                // Without runtime linking miniaudio compiles each backend it
+                // supports, and its JACK backend needs jack/jack.h, which the
+                // Windows SDK does not ship. WASAPI is the backend Windows
+                // uses; JACK stays available on Linux, where it is loaded at
+                // runtime and needs no header.
+                .define("MA_NO_JACK", .when(platforms: [.windows])),
+            ],
             linkerSettings: [
                 .linkedLibrary("dl", .when(platforms: [.linux])),
                 .linkedLibrary("m", .when(platforms: [.linux])),
