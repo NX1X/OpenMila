@@ -5,10 +5,15 @@
 # Dagger CLI and calls it.
 name: OpenMila Linux
 
+# A branch with an open pull request was building twice, once for the push and
+# once for the pull request. Pushes are watched on main only; everything else
+# is covered by its pull request.
 on:
   push:
-    branches: [main, "port/**"]
+    branches: [main]
+    paths-ignore: ["docs/**", "docs-internal/**", "**/*.md"]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,7 +31,8 @@ env:
 jobs:
   linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # A full run is about 15 minutes.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,5 +48,7 @@ jobs:
           tar xzf "$file" dagger
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
+      # The desktop app is over half the pipeline's time, so a pull request
+      # runs everything else and a push to main adds the app.
       - name: Run the pipeline (dagger call check)
-        run: dagger call --progress=plain check
+        run: dagger call --progress=plain check --with-app=${{ github.event_name == 'push' }}

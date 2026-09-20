@@ -117,9 +117,16 @@ stage_port() {
 }
 
 stage_cli() {
-  log "openmila-cli, openmila-mcp and the openmila app build"
+  log "openmila-cli and openmila-mcp"
   retry swift build --product openmila-cli "${FLAGS[@]}"
   retry swift build --product openmila-mcp "${FLAGS[@]}"
+}
+
+# The app is the most expensive stage by far (the UI toolkit and its GTK
+# bindings), so it is its own stage: a pull request does not pay for it, a
+# merge to main does.
+stage_app() {
+  log "the openmila desktop app"
   (cd Port/App && retry swift build --product openmila "${APP_FLAGS[@]}")
 }
 
@@ -140,8 +147,10 @@ case "${1:-all}" in
   core) stage_whisper; stage_core ;;
   port) stage_whisper; stage_port ;;
   cli) stage_whisper; stage_cli ;;
+  app) stage_whisper; stage_app ;;
   e2e) stage_whisper; stage_e2e ;;
   all) stage_whisper; stage_packages; stage_shims; stage_core; stage_port; stage_cli; stage_e2e ;;
-  *) echo "usage: ci/run.sh all|whisper|packages|shims|core|port|cli|e2e" >&2; exit 2 ;;
+  all-with-app) stage_whisper; stage_packages; stage_shims; stage_core; stage_port; stage_cli; stage_app; stage_e2e ;;
+  *) echo "usage: ci/run.sh all|all-with-app|whisper|packages|shims|core|port|cli|app|e2e" >&2; exit 2 ;;
 esac
 log "done: ${1:-all}"

@@ -61,7 +61,8 @@ func (m *OpenmilaCi) envWithModel(source *dagger.Directory) *dagger.Container {
 		WithEnvVariable("OPENMILA_E2E_MODEL", "/models/ggml-tiny.bin")
 }
 
-// Run one pipeline stage: whisper, packages, shims, core, port, cli or e2e.
+// Run one pipeline stage: whisper, packages, shims, core, port, cli, app,
+// e2e, all or all-with-app.
 func (m *OpenmilaCi) Stage(
 	ctx context.Context,
 	// +defaultPath="/"
@@ -80,7 +81,16 @@ func (m *OpenmilaCi) Check(
 	// +defaultPath="/"
 	// +ignore=[".build", "Port/App/.build", "Port/Spikes/*/.build", "dist", "docs-internal", "**/build-linux", "Packages/*/.build"]
 	source *dagger.Directory,
+	// Also build the desktop app, which is over half the pipeline's time
+	// because of the UI toolkit. A merge to main asks for it; a pull request
+	// does not need to pay for it to catch a break.
+	// +optional
+	// +default=false
+	withApp bool,
 ) (string, error) {
+	if withApp {
+		return m.Stage(ctx, source, "all-with-app")
+	}
 	return m.Stage(ctx, source, "all")
 }
 

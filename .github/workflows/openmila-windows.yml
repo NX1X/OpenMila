@@ -5,18 +5,28 @@
 # natively on a Windows runner with the same pinned toolchain and the same
 # whisper.cpp commit.
 #
-# It runs on main, on Windows work branches and on request, so Windows runner
-# minutes (billed at four times the Linux rate on private repositories) are
-# spent deliberately: a merge to main proves Windows, and day-to-day Linux work
-# does not pay for it.
+# Windows minutes bill at twice the Linux rate, and this job is the most
+# expensive thing in the repository, so it is rationed:
+#   - pushes to main and pull requests build the core, the CLI, the MCP helper
+#     and run the tests (about 20 minutes);
+#   - the desktop app and the portable zip, which are another half hour, run
+#     only on main, on a tag, or when the workflow is started by hand;
+#   - every Swift build directory is cached, so a run that changes no
+#     dependencies reuses the previous compile.
 name: OpenMila Windows
 
 on:
   push:
     branches: ["main", "port/windows**"]
     paths-ignore: ["docs/**", "docs-internal/**", "**/*.md"]
+  pull_request:
+    paths-ignore: ["docs/**", "docs-internal/**", "**/*.md"]
   workflow_dispatch:
     inputs:
+      app:
+        description: "Also build the desktop app and the portable zip (about 30 minutes)"
+        type: boolean
+        default: true
       diarization:
         description: "Also build the diarization Python runtime (slow, ~2 GB of downloads)"
         type: boolean
@@ -35,7 +45,9 @@ env:
 jobs:
   windows:
     runs-on: windows-2025
-    timeout-minutes: 120
+    # A full run (core, tests, app, zip) is about an hour; a hung job at the
+    # old two-hour limit cost two hours of Windows minutes, which bill double.
+    timeout-minutes: 75
     defaults:
       run:
         shell: pwsh
@@ -86,6 +98,20 @@ jobs:
           path: ${{ github.workspace }}\whisper-prefix
           key: whisper-windows-${{ hashFiles('.github/whisper-cpp-pin.txt') }}
 
+      - name: Cache the Swift build directories
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .build
+            Port/App/.build
+          # The toolchain, the resolved dependencies and the engine decide what
+          # a rebuild costs; the run id keeps each run's cache separate, and
+          # the restore keys fall back to the newest cache for this branch.
+          key: swiftbuild-windows-${{ env.SWIFT_VERSION }}-${{ hashFiles('Package.resolved', 'Port/App/Package.resolved', '.github/whisper-cpp-pin.txt') }}-${{ github.run_id }}
+          restore-keys: |
+            swiftbuild-windows-${{ env.SWIFT_VERSION }}-${{ hashFiles('Package.resolved', 'Port/App/Package.resolved', '.github/whisper-cpp-pin.txt') }}-
+            swiftbuild-windows-${{ env.SWIFT_VERSION }}-
+
       - name: Build whisper.cpp at the pinned commit
         if: steps.whisper-cache.outputs.cache-hit != 'true'
         run: .\scripts\port\build-whisper.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix"
@@ -103,17 +129,27 @@ jobs:
         if: inputs.diarization
         run: .\diarization\build-bundle-windows.ps1
 
+      # The app and the zip are the expensive half of this job: they run on a
+      # push (that is main, since pull requests cover the branches) and when
+      # the workflow is started by hand with the input left on. A pull request
+      # gets the core and the tests, which is what catches a Windows break.
       - name: Build the desktop app
+        if: github.event_name == 'push' || inputs.app
         run: .\scripts\port\build-windows.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -App
 
       - name: Package the portable zip
+        if: github.event_name == 'push' || inputs.app
         run: .\packaging\windows\package.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -Configuration debug
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: github.event_name == 'push' || inputs.app
         with:
           name: openmila-windows-zip
           path: dist/*.zip
           if-no-files-found: error
+          # Long enough to fetch a build from CI, short enough that a 114 MB
+          # zip per merge does not accumulate.
+          retention-days: 7
 
       - name: Upload the build log on failure
         if: failure()
@@ -122,3 +158,4 @@ jobs:
           name: windows-build-log
           path: ${{ github.workspace }}\build-windows.log
           if-no-files-found: ignore
+          retention-days: 7
