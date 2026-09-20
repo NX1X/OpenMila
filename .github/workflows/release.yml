@@ -29,6 +29,7 @@ env:
 jobs:
   gate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -81,7 +82,7 @@ jobs:
         timeout-minutes: 15
         run: dagger call --progress=plain sbom export --path=dist/openmila-sbom.cdx.json
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-packages
           path: dist/*
@@ -143,7 +144,7 @@ jobs:
         timeout-minutes: 75
         run: .\packaging\windows\package.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -Version "${{ needs.gate.outputs.version }}"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-package
           path: dist/*
@@ -152,6 +153,7 @@ jobs:
   publish:
     needs: [gate, linux, windows]
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: write
       id-token: write
