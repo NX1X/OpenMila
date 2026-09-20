@@ -57,7 +57,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log.git", exact: "1.15.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.2"),
         // The MCP helper's SDK, pinned exactly as upstream's project.yml pins it.
-        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
     ],
     targets: [
         // MARK: Shims (Apple module names, open-source implementations)
@@ -190,14 +189,11 @@ let package = Package(
         // place, MilaKit + the MCP SDK, same as project.yml's mila-mcp target.
         .executableTarget(
             name: "openmila-mcp",
-            dependencies: [
-                .product(name: "MilaKit", package: "MilaKit"),
-                .product(name: "MCP", package: "swift-sdk"),
-                // The SDK uses swift-crypto off macOS through a conditional
-                // dependency the build tool does not carry to the link step.
-                .product(name: "Crypto", package: "swift-crypto"),
-            ],
-            path: "MilaMCP",
+            dependencies: [.product(name: "MilaKit", package: "MilaKit")],
+            // A port twin of upstream's MilaMCP: the MCP Swift SDK imports
+            // EventSource on Windows without linking it, and drags swift-nio
+            // in for transports this helper never uses. See CHANGES.md.
+            path: "Port/MCP",
             swiftSettings: [.unsafeFlags(["-swift-version", "5"])]
         ),
 
@@ -221,7 +217,7 @@ let package = Package(
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/WindowsPlatform", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/WindowsPlatform", "docs",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
@@ -264,7 +260,7 @@ let package = Package(
             exclude: existing([
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/WindowsPlatform", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/WindowsPlatform", "docs",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",

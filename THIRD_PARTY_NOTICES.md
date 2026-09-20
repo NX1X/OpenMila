@@ -85,9 +85,10 @@ licence) where statically linked.
 
 ### MCP Swift SDK (Apache-2.0, with some contributions under MIT)
 
-Used by the `openmila-mcp` helper, pinned to the version Mila pins (0.12.1).
-The project is moving from MIT to Apache-2.0; contributions not yet relicensed
-remain MIT.
+Not linked by OpenMila's builds: the port's `openmila-mcp` speaks MCP's stdio
+JSON-RPC directly (see CHANGES.md). The entry stays because macOS builds from
+upstream's project still use the SDK, and the port tracks the same version
+(0.12.1) for protocol compatibility.
 
 - Project: https://github.com/modelcontextprotocol/swift-sdk
 - Copyright © Anthropic, PBC and the MCP Swift SDK contributors.
