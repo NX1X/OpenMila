@@ -67,7 +67,7 @@ public final class WindowsNotifier: Notifier, @unchecked Sendable {
         data.uID = 1
         data.uFlags = UINT(NIF_INFO | NIF_ICON | NIF_MESSAGE)
         data.uCallbackMessage = omTrayIconMessage
-        data.hIcon = LoadIconW(nil, IDI_APPLICATION)
+        data.hIcon = LoadIconW(nil, om_idi_application())
         withUnsafeMutablePointer(to: &data.szInfoTitle) { pointer in
             pointer.withMemoryRebound(to: WCHAR.self, capacity: 64) { buffer in
                 copy(title, into: buffer, capacity: 64)
@@ -103,7 +103,7 @@ public final class WindowsNotifier: Notifier, @unchecked Sendable {
             wc.lpszClassName = name.baseAddress
             RegisterClassW(&wc)
             return CreateWindowExW(0, name.baseAddress, name.baseAddress, 0, 0, 0, 0, 0,
-                                   HWND_MESSAGE, nil, wc.hInstance, nil)
+                                   HWND(om_hwnd_message()), nil, wc.hInstance, nil)
         }
         window = created
         return created
@@ -233,34 +233,20 @@ public struct WindowsBinaryTrust: BinaryTrust {
     public init() {}
 
     public func isTrusted(executable: URL, expectedPublisher: String) -> Bool {
-        var wide = Array(executable.path.utf16)
-        wide.append(0)
-        return wide.withUnsafeMutableBufferPointer { path -> Bool in
-            var file = WINTRUST_FILE_INFO()
-            file.cbStruct = DWORD(MemoryLayout<WINTRUST_FILE_INFO>.size)
-            file.pcwszFilePath = UnsafePointer(path.baseAddress)
-            var data = WINTRUST_DATA()
-            data.cbStruct = DWORD(MemoryLayout<WINTRUST_DATA>.size)
-            data.dwUIChoice = DWORD(WTD_UI_NONE)
-            data.fdwRevocationChecks = DWORD(WTD_REVOKE_WHOLECHAIN)
-            data.dwUnionChoice = DWORD(WTD_CHOICE_FILE)
-            data.dwStateAction = DWORD(WTD_STATEACTION_VERIFY)
-            data.dwProvFlags = DWORD(WTD_SAFER_FLAG)
-            return withUnsafeMutablePointer(to: &file) { filePointer -> Bool in
-                data.pFile = filePointer
-                var action = GUID()
-                withUnsafeMutableBytes(of: &action) { bytes in
-                    om_wintrust_generic_verify_v2(bytes.bindMemory(to: UInt8.self).baseAddress!)
-                }
-                let status = WinVerifyTrust(nil, &action, &data)
-                data.dwStateAction = DWORD(WTD_STATEACTION_CLOSE)
-                _ = WinVerifyTrust(nil, &action, &data)
-                // A trusted chain is necessary; the publisher name is checked
-                // by the caller against the certificate subject once this
-                // returns true, so a valid signature by anyone is not enough.
-                return status == 0
-            }
-        }
+        var path = Array(executable.path.utf16)
+        path.append(0)
+        var subject = [UInt16](repeating: 0, count: 512)
+        // The whole check is in C: WinSDK exports none of the wintrust
+        // surface. It returns the provider status and, when that says the
+        // chain is trusted, the signer's subject name.
+        let status = om_verify_authenticode(path, &subject, Int32(subject.count))
+        guard status == 0 else { return false }
+        // A trusted chain is necessary but not sufficient: anyone can buy a
+        // certificate, so the publisher has to be the expected one. An empty
+        // subject means the name could not be read, which fails closed.
+        let signer = String(decodingCString: subject, as: UTF16.self)
+        guard !signer.isEmpty else { return false }
+        return signer.localizedCaseInsensitiveContains(expectedPublisher)
     }
 }
 #endif
