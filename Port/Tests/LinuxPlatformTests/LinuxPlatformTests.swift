@@ -231,6 +231,16 @@ final class PipeWireGraphTests: XCTestCase {
         }
     }
 
+    func test_two_streams_from_one_application_get_distinct_names() {
+        let targets = [
+            AudioCaptureTarget(id: "1", name: "Chromium", scope: .application(processID: 10)),
+            AudioCaptureTarget(id: "2", name: "Chromium", scope: .application(processID: 10)),
+            AudioCaptureTarget(id: "3", name: "Zoom", scope: .application(processID: 11)),
+        ]
+        let named = LinuxAppAudioCapture.disambiguated(targets).map(\.name)
+        XCTAssertEqual(named, ["Chromium (1)", "Chromium (2)", "Zoom"])
+    }
+
     func test_a_stream_with_no_serial_is_skipped() {
         // Without a serial there is nothing to hand --target, and the node id
         // is not a safe substitute: it is reused as nodes come and go.

@@ -30,7 +30,22 @@ public struct LinuxAppAudioCapture: AppAudioCapture {
             // Report the reason rather than an empty list.
             return try wholeSystem.targets()
         }
-        return applications + monitors
+        return Self.disambiguated(applications) + monitors
+    }
+
+    /// Two streams from the same application (two browser tabs, say) carry the
+    /// same name, and the picker shows names, so a repeated one gets its
+    /// stream number appended. Unique names are left exactly as they are.
+    static func disambiguated(_ targets: [AudioCaptureTarget]) -> [AudioCaptureTarget] {
+        var counts: [String: Int] = [:]
+        for target in targets { counts[target.name, default: 0] += 1 }
+        var seen: [String: Int] = [:]
+        return targets.map { target in
+            guard counts[target.name, default: 0] > 1 else { return target }
+            let index = seen[target.name, default: 0] + 1
+            seen[target.name] = index
+            return AudioCaptureTarget(id: target.id, name: "\(target.name) (\(index))", scope: target.scope)
+        }
     }
 
     public func start(target: AudioCaptureTarget) throws -> AudioCaptureSession {
