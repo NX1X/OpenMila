@@ -1,5 +1,9 @@
 // Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
-
+//
+// Linux only: the types under test exist only there, and SwiftPM has no way to
+// leave a test target out of a Windows build, so the file compiles to nothing
+// off Linux.
+#if os(Linux)
 import Foundation
 import PlatformKit
 import XCTest
@@ -136,3 +140,4 @@ final class UpdaterTests: XCTestCase {
         XCTAssertNil(SemanticVersion("Alpharetta"))
     }
 }
+#endif

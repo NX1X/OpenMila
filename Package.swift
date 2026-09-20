@@ -151,7 +151,10 @@ let package = Package(
         ),
         .testTarget(
             name: "LinuxPlatformTests",
-            dependencies: ["LinuxPlatform", "Updater", "PlatformKit"],
+            dependencies: [
+                .target(name: "LinuxPlatform", condition: .when(platforms: [.linux])),
+                "Updater", "PlatformKit",
+            ],
             path: "Port/Tests/LinuxPlatformTests"
         ),
         .testTarget(
