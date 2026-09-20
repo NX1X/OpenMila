@@ -112,8 +112,8 @@ stage_core() {
 }
 
 stage_port() {
-  log "port modules: recording session, Linux platform services"
-  retry swift test "${FLAGS[@]}" --filter '^(RecordingTests|LinuxPlatformTests)\.'
+  log "port modules: recording session, time stretching, Linux platform services"
+  retry swift test "${FLAGS[@]}" --filter '^(RecordingTests|StretchTests|LinuxPlatformTests)\.'
 }
 
 stage_cli() {
