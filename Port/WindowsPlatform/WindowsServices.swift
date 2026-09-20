@@ -125,7 +125,8 @@ public final class WindowsNotifier: Notifier, @unchecked Sendable {
             wc.lpszClassName = name.baseAddress
             RegisterClassW(&wc)
             return CreateWindowExW(0, name.baseAddress, name.baseAddress, 0, 0, 0, 0, 0,
-                                   HWND(om_hwnd_message()), nil, wc.hInstance, nil)
+                                   om_hwnd_message()?.assumingMemoryBound(to: HWND__.self),
+                                   nil, wc.hInstance, nil)
         }
         window = created
         return created
@@ -173,7 +174,13 @@ public final class WindowsFolderWatcher: FolderWatcher, @unchecked Sendable {
             self.handle = handle
             self.running = true
         }
+        // HANDLE is a raw pointer and so not Sendable; the watcher thread
+        // takes the bit pattern and rebuilds it, which says plainly that the
+        // handle is shared deliberately and keeps this compiling under the
+        // Swift 6 language mode.
+        let handleBits = UInt(bitPattern: handle)
         let thread = Thread { [weak self] in
+            let handle = UnsafeMutableRawPointer(bitPattern: handleBits)
             var buffer = [UInt8](repeating: 0, count: 32 * 1024)
             while self?.lock.withLock({ self?.running ?? false }) == true {
                 var bytes: DWORD = 0
