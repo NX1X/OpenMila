@@ -5,14 +5,15 @@
 # natively on a Windows runner with the same pinned toolchain and the same
 # whisper.cpp commit.
 #
-# It runs only on Windows-related branches and on request, so Windows runner
+# It runs on main, on Windows work branches and on request, so Windows runner
 # minutes (billed at four times the Linux rate on private repositories) are
-# spent deliberately.
+# spent deliberately: a merge to main proves Windows, and day-to-day Linux work
+# does not pay for it.
 name: OpenMila Windows
 
 on:
   push:
-    branches: ["port/stage4-windows", "port/windows**"]
+    branches: ["main", "port/windows**"]
     paths-ignore: ["docs/**", "docs-internal/**", "**/*.md"]
   workflow_dispatch:
     inputs:
