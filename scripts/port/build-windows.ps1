@@ -36,6 +36,10 @@ if ($Test) {
 if ($App) {
     Write-Host "==> desktop app"
     Set-Location (Join-Path $root "Port\App")
-    swift build @flags --product openmila
+    # The same build system the Linux build uses. The default one ignores the
+    # platform conditions on the UI toolkit's backend dependencies, so it tried
+    # to compile the GTK backend on Windows and stopped at
+    # "'gtk/gtk.h' file not found".
+    swift build --build-system native -j 3 @flags --product openmila
     if ($LASTEXITCODE -ne 0) { throw "app build failed" }
 }

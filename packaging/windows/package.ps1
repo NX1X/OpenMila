@@ -33,8 +33,10 @@ Pop-Location
 
 $appBin = $null
 Push-Location (Join-Path $root "Port\App")
-swift build @flags --product openmila
-if ($LASTEXITCODE -eq 0) { $appBin = (swift build @flags --show-bin-path | Select-Object -Last 1) }
+# Matching scripts\port\build-windows.ps1: the default build system ignores
+# the UI toolkit's platform conditions and drags the GTK backend in.
+swift build --build-system native -j 3 @flags --product openmila
+if ($LASTEXITCODE -eq 0) { $appBin = (swift build --build-system native @flags --show-bin-path | Select-Object -Last 1) }
 Pop-Location
 
 Copy-Item "$rootBin\openmila-cli.exe", "$rootBin\openmila-mcp.exe" $stage
