@@ -363,5 +363,9 @@ let package = Package(
             ],
             path: "Port/Tests/ShimTests"
         ),
-    ]
+    ],
+    // Port/CWinShim/om_process_loopback.cpp is C++ so that the audio
+    // interface GUIDs come from the SDK through __uuidof rather than being
+    // copied in by hand; everything it exports keeps C linkage.
+    cxxLanguageStandard: .cxx17
 )

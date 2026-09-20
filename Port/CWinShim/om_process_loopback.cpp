@@ -2,14 +2,23 @@
 //
 // WASAPI process loopback: one application's audio, not the whole machine.
 // See include/om_process_loopback.h for why this exists and why it is C.
+// Compiled as C++ for one reason: the interface GUIDs.
+//
+// The SDK declares IID_IAudioClient and its neighbours EXTERN_C, so INITGUID
+// cannot instantiate them, and they are not in uuid.lib either: the link
+// failed on all three. In C++ `__uuidof` reads the uuid the SDK header
+// already attached to the interface, so the values come from the SDK rather
+// than being copied into this file by hand, where a typo would surface as a
+// mysterious runtime refusal. The completion handler is also a plain class
+// here instead of a hand-written vtable.
+//
+// Everything this file exports stays C, because Swift is what calls it.
+extern "C" {
 #include "include/om_process_loopback.h"
+}
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
-#define COBJMACROS
-// The interface GUIDs this file names (IID_IAudioClient and friends) are
-// declared EXTERN_C by the SDK rather than with DEFINE_GUID, so INITGUID
-// cannot instantiate them: they come from uuid.lib, which Package.swift links.
 #include <windows.h>
 #include <audioclient.h>
 #include <audioclientactivationparams.h>
@@ -38,52 +47,36 @@ struct om_process_loopback {
 // so the reference counting is the minimum that keeps COM's rules.
 // ---------------------------------------------------------------------------
 
-typedef struct {
-    IActivateAudioInterfaceCompletionHandler handler;
-    LONG references;
-    HANDLE done;
-} om_completion_handler;
+/// Receives the answer to ActivateAudioInterfaceAsync, which does not return
+/// its result but calls back. A single-use object owned by the stack frame
+/// that starts the activation, so the reference count only has to satisfy
+/// COM's rules rather than manage a lifetime.
+class ActivationHandler : public IActivateAudioInterfaceCompletionHandler {
+public:
+    explicit ActivationHandler(HANDLE done) : done_(done) {}
 
-static HRESULT STDMETHODCALLTYPE handler_query(IActivateAudioInterfaceCompletionHandler *self,
-                                               REFIID riid, void **object) {
-    if (object == NULL) return E_POINTER;
-    if (IsEqualIID(riid, &IID_IUnknown) ||
-        IsEqualIID(riid, &IID_IActivateAudioInterfaceCompletionHandler)) {
-        *object = self;
-        self->lpVtbl->AddRef(self);
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **object) override {
+        if (object == nullptr) return E_POINTER;
+        if (riid == __uuidof(IUnknown) || riid == __uuidof(IActivateAudioInterfaceCompletionHandler)) {
+            *object = this;
+            AddRef();
+            return S_OK;
+        }
+        *object = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef() override { return (ULONG)InterlockedIncrement(&references_); }
+    ULONG STDMETHODCALLTYPE Release() override { return (ULONG)InterlockedDecrement(&references_); }
+
+    HRESULT STDMETHODCALLTYPE ActivateCompleted(IActivateAudioInterfaceAsyncOperation *) override {
+        SetEvent(done_);
         return S_OK;
     }
-    *object = NULL;
-    return E_NOINTERFACE;
-}
 
-static ULONG STDMETHODCALLTYPE handler_add_ref(IActivateAudioInterfaceCompletionHandler *self) {
-    om_completion_handler *handler = (om_completion_handler *)self;
-    return (ULONG)InterlockedIncrement(&handler->references);
-}
-
-static ULONG STDMETHODCALLTYPE handler_release(IActivateAudioInterfaceCompletionHandler *self) {
-    om_completion_handler *handler = (om_completion_handler *)self;
-    LONG remaining = InterlockedDecrement(&handler->references);
-    return (ULONG)remaining;
-}
-
-/// The audio engine calls this when the activation finishes, successfully or
-/// not. The result is collected by the waiting thread through the event.
-static HRESULT STDMETHODCALLTYPE handler_activate_completed(
-    IActivateAudioInterfaceCompletionHandler *self,
-    IActivateAudioInterfaceAsyncOperation *operation) {
-    (void)operation;
-    om_completion_handler *handler = (om_completion_handler *)self;
-    SetEvent(handler->done);
-    return S_OK;
-}
-
-static IActivateAudioInterfaceCompletionHandlerVtbl om_handler_vtbl = {
-    handler_query,
-    handler_add_ref,
-    handler_release,
-    handler_activate_completed,
+private:
+    LONG references_ = 1;
+    HANDLE done_;
 };
 
 // ---------------------------------------------------------------------------
@@ -104,12 +97,12 @@ static DWORD WINAPI om_capture_thread(LPVOID parameter) {
         if (wait != WAIT_OBJECT_0) continue;
 
         UINT32 available = 0;
-        while (SUCCEEDED(IAudioCaptureClient_GetNextPacketSize(capture->capture, &available)) &&
+        while (SUCCEEDED(capture->capture->GetNextPacketSize(&available)) &&
                available > 0) {
             BYTE *data = NULL;
             UINT32 frames = 0;
             DWORD flags = 0;
-            hr = IAudioCaptureClient_GetBuffer(capture->capture, &data, &frames, &flags, NULL, NULL);
+            hr = capture->capture->GetBuffer(&data, &frames, &flags, nullptr, nullptr);
             if (FAILED(hr)) break;
 
             if (frames > 0 && capture->callback != NULL) {
@@ -128,7 +121,7 @@ static DWORD WINAPI om_capture_thread(LPVOID parameter) {
                     capture->callback(capture->user, (const float *)data, frames);
                 }
             }
-            IAudioCaptureClient_ReleaseBuffer(capture->capture, frames);
+            capture->capture->ReleaseBuffer(frames);
         }
     }
 
@@ -140,7 +133,7 @@ static DWORD WINAPI om_capture_thread(LPVOID parameter) {
 // Starting and stopping.
 // ---------------------------------------------------------------------------
 
-om_process_loopback *om_process_loopback_start(uint32_t pid,
+extern "C" om_process_loopback *om_process_loopback_start(uint32_t pid,
                                                uint32_t sample_rate,
                                                uint32_t channels,
                                                om_loopback_callback callback,
@@ -191,44 +184,41 @@ om_process_loopback *om_process_loopback_start(uint32_t pid,
     parameter.blob.cbSize = sizeof(activation);
     parameter.blob.pBlobData = (BYTE *)&activation;
 
-    om_completion_handler handler;
-    ZeroMemory(&handler, sizeof(handler));
-    handler.handler.lpVtbl = &om_handler_vtbl;
-    handler.references = 1;
-    handler.done = CreateEventW(NULL, FALSE, FALSE, NULL);
-    if (handler.done == NULL) {
+    HANDLE activation_done = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    ActivationHandler handler(activation_done);
+    if (activation_done == nullptr) {
         if (error) *error = HRESULT_FROM_WIN32(GetLastError());
         goto fail;
     }
 
     IActivateAudioInterfaceAsyncOperation *operation = NULL;
     hr = ActivateAudioInterfaceAsync(VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
-                                     &IID_IAudioClient,
+                                     __uuidof(IAudioClient),
                                      &parameter,
-                                     &handler.handler,
+                                     &handler,
                                      &operation);
     if (FAILED(hr)) {
-        CloseHandle(handler.done);
+        CloseHandle(activation_done);
         if (error) *error = hr;
         goto fail;
     }
 
     // The engine answers on another thread; ten seconds is far longer than it
     // takes, and finite so a broken audio service cannot hang a recording.
-    DWORD waited = WaitForSingleObject(handler.done, 10000);
-    CloseHandle(handler.done);
+    DWORD waited = WaitForSingleObject(activation_done, 10000);
+    CloseHandle(activation_done);
     if (waited != WAIT_OBJECT_0) {
-        if (operation) IUnknown_Release((IUnknown *)operation);
+        if (operation) operation->Release();
         if (error) *error = HRESULT_FROM_WIN32(WAIT_TIMEOUT);
         goto fail;
     }
 
     HRESULT activation_result = E_FAIL;
     IUnknown *activated = NULL;
-    hr = IActivateAudioInterfaceAsyncOperation_GetActivateResult(operation, &activation_result, &activated);
-    IUnknown_Release((IUnknown *)operation);
+    hr = operation->GetActivateResult(&activation_result, &activated);
+    operation->Release();
     if (FAILED(hr) || FAILED(activation_result) || activated == NULL) {
-        if (activated) IUnknown_Release(activated);
+        if (activated) activated->Release();
         if (error) *error = FAILED(hr) ? hr : activation_result;
         goto fail;
     }
@@ -237,7 +227,7 @@ om_process_loopback *om_process_loopback_start(uint32_t pid,
     // Process loopback requires a shared-timer-driven client with an event,
     // and the buffer duration is expressed in 100 ns units: 200 ms here, which
     // is generous enough to survive a scheduling hiccup.
-    hr = IAudioClient_Initialize(capture->client,
+    hr = capture->client->Initialize(
                                  AUDCLNT_SHAREMODE_SHARED,
                                  AUDCLNT_STREAMFLAGS_LOOPBACK |
                                  AUDCLNT_STREAMFLAGS_EVENTCALLBACK |
@@ -254,13 +244,13 @@ om_process_loopback *om_process_loopback_start(uint32_t pid,
         if (error) *error = HRESULT_FROM_WIN32(GetLastError());
         goto fail;
     }
-    hr = IAudioClient_SetEventHandle(capture->client, capture->event);
+    hr = capture->client->SetEventHandle(capture->event);
     if (FAILED(hr)) { if (error) *error = hr; goto fail; }
 
-    hr = IAudioClient_GetService(capture->client, &IID_IAudioCaptureClient, (void **)&capture->capture);
+    hr = capture->client->GetService(__uuidof(IAudioCaptureClient), (void **)&capture->capture);
     if (FAILED(hr)) { if (error) *error = hr; goto fail; }
 
-    hr = IAudioClient_Start(capture->client);
+    hr = capture->client->Start();
     if (FAILED(hr)) { if (error) *error = hr; goto fail; }
 
     InterlockedExchange(&capture->running, 1);
@@ -277,7 +267,7 @@ fail:
     return NULL;
 }
 
-void om_process_loopback_stop(om_process_loopback *capture) {
+extern "C" void om_process_loopback_stop(om_process_loopback *capture) {
     if (capture == NULL) return;
 
     InterlockedExchange(&capture->running, 0);
@@ -288,14 +278,14 @@ void om_process_loopback_stop(om_process_loopback *capture) {
         WaitForSingleObject(capture->thread, 2000);
         CloseHandle(capture->thread);
     }
-    if (capture->client) IAudioClient_Stop(capture->client);
-    if (capture->capture) IAudioCaptureClient_Release(capture->capture);
-    if (capture->client) IAudioClient_Release(capture->client);
+    if (capture->client) capture->client->Stop();
+    if (capture->capture) capture->capture->Release();
+    if (capture->client) capture->client->Release();
     if (capture->event) CloseHandle(capture->event);
     free(capture);
 }
 
-const char *om_process_loopback_error(int32_t error) {
+extern "C" const char *om_process_loopback_error(int32_t error) {
     HRESULT hr = (HRESULT)error;
     // HRESULT_FROM_WIN32 is an inline function here, not a constant, so these
     // two cannot be case labels.
@@ -315,7 +305,7 @@ const char *om_process_loopback_error(int32_t error) {
 #else
 // Every other system builds this to nothing: the port's other backends cover
 // them, and C forbids an empty translation unit.
-om_process_loopback *om_process_loopback_start(uint32_t pid, uint32_t sample_rate, uint32_t channels,
+extern "C" om_process_loopback *om_process_loopback_start(uint32_t pid, uint32_t sample_rate, uint32_t channels,
                                                om_loopback_callback callback, void *user,
                                                int32_t *error) {
     (void)pid; (void)sample_rate; (void)channels; (void)callback; (void)user;
@@ -323,9 +313,9 @@ om_process_loopback *om_process_loopback_start(uint32_t pid, uint32_t sample_rat
     return 0;
 }
 
-void om_process_loopback_stop(om_process_loopback *capture) { (void)capture; }
+extern "C" void om_process_loopback_stop(om_process_loopback *capture) { (void)capture; }
 
-const char *om_process_loopback_error(int32_t error) {
+extern "C" const char *om_process_loopback_error(int32_t error) {
     (void)error;
     return "process loopback is a Windows feature";
 }
