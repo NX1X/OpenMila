@@ -52,7 +52,7 @@ jobs:
   linux:
     needs: gate
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -90,7 +90,7 @@ jobs:
   windows:
     needs: gate
     runs-on: windows-2025
-    timeout-minutes: 120
+    timeout-minutes: 100
     defaults:
       run:
         shell: pwsh
@@ -125,10 +125,22 @@ jobs:
           $swift = (Get-ChildItem "C:\Users\runneradmin\AppData\Local\Programs\Swift\Toolchains" | Select-Object -First 1).FullName + "\usr\bin"
           echo $swift | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
+      - name: Cache the whisper.cpp build
+        id: whisper-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}\whisper-prefix
+          key: whisper-windows-${{ hashFiles('.github/whisper-cpp-pin.txt') }}
+
       - name: Build whisper.cpp at the pinned commit
+        if: steps.whisper-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 20
         run: .\scripts\port\build-whisper.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix"
 
+      # A release package is built in release configuration from scratch: the
+      # UI toolkit alone is over half an hour.
       - name: Package the portable zip
+        timeout-minutes: 75
         run: .\packaging\windows\package.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -Version "${{ needs.gate.outputs.version }}"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

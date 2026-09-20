@@ -21,6 +21,17 @@ Early development, not yet released. Follow the
 [releases page](https://github.com/NX1X/OpenMila/releases) for the first
 Linux beta.
 
+**Linux** is where the work happens: recording, transcription, diarization,
+dictation, AI summaries, the MCP server, per-application audio capture, the
+AppImage and the `.deb` all run day to day on Ubuntu 26.04.
+
+**Windows** builds and passes its tests in CI on `windows-2025` - the core,
+the CLI, the MCP helper, the app on the WinUI backend and a portable zip - but
+nobody has run any of it on a Windows desktop yet. Treat it as untested.
+
+[`docs/port/PARITY.md`](docs/port/PARITY.md) tracks every Mila feature with a
+per-system status and the evidence behind it, including what is still missing.
+
 ## Credits
 
 Mila was created by [Uri Harduf](https://github.com/urisland) at

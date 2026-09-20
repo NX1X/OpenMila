@@ -149,8 +149,34 @@ public struct SemanticVersion: Comparable, CustomStringConvertible, Sendable {
         return s
     }
 
+    /// Semver says build metadata does not affect precedence. OpenMila's own
+    /// versions are `<upstream>+port.N`, so two port releases of the same
+    /// upstream version differ ONLY in build metadata, and ignoring it would
+    /// make every port release look equal to the last - the updater would
+    /// never offer one. The port therefore orders by build metadata as the
+    /// final tiebreaker, numerically where the identifiers are numbers.
+    static func buildOrder(_ lhs: String?, _ rhs: String?) -> Int {
+        switch (lhs, rhs) {
+        case (nil, nil): return 0
+        // A build with metadata is the later one: 1.9.5 then 1.9.5+port.1.
+        case (nil, _?): return -1
+        case (_?, nil): return 1
+        case let (left?, right?):
+            let a = left.split(separator: ".").map(String.init)
+            let b = right.split(separator: ".").map(String.init)
+            for (x, y) in zip(a, b) where x != y {
+                if let xi = Int(x), let yi = Int(y) { return xi < yi ? -1 : 1 }
+                return x < y ? -1 : 1
+            }
+            if a.count == b.count { return 0 }
+            return a.count < b.count ? -1 : 1
+        }
+    }
+
     public static func == (lhs: SemanticVersion, rhs: SemanticVersion) -> Bool {
-        (lhs.major, lhs.minor, lhs.patch) == (rhs.major, rhs.minor, rhs.patch) && lhs.prerelease == rhs.prerelease
+        (lhs.major, lhs.minor, lhs.patch) == (rhs.major, rhs.minor, rhs.patch)
+            && lhs.prerelease == rhs.prerelease
+            && buildOrder(lhs.build, rhs.build) == 0
     }
 
     public static func < (lhs: SemanticVersion, rhs: SemanticVersion) -> Bool {
@@ -158,7 +184,7 @@ public struct SemanticVersion: Comparable, CustomStringConvertible, Sendable {
             return (lhs.major, lhs.minor, lhs.patch) < (rhs.major, rhs.minor, rhs.patch)
         }
         switch (lhs.prerelease.isEmpty, rhs.prerelease.isEmpty) {
-        case (true, true): return false
+        case (true, true): return buildOrder(lhs.build, rhs.build) < 0
         case (false, true): return true
         case (true, false): return false
         case (false, false):
@@ -170,7 +196,10 @@ public struct SemanticVersion: Comparable, CustomStringConvertible, Sendable {
                 default: return a < b
                 }
             }
-            return lhs.prerelease.count < rhs.prerelease.count
+            if lhs.prerelease.count != rhs.prerelease.count {
+                return lhs.prerelease.count < rhs.prerelease.count
+            }
+            return buildOrder(lhs.build, rhs.build) < 0
         }
     }
 }

@@ -163,3 +163,38 @@ func XCTAssertThrowsErrorAsync<T>(_ expression: @autoclosure () async throws -> 
         handler(error)
     }
 }
+
+/// Version ordering, which decides whether an update is offered at all.
+/// OpenMila's versions are `<upstream>+port.N`, so the port number lives in
+/// the build metadata that semver says to ignore - and ignoring it would make
+/// every port release of one upstream version look identical.
+final class VersionOrderTests: XCTestCase {
+    private func version(_ text: String) throws -> SemanticVersion {
+        try XCTUnwrap(SemanticVersion(text))
+    }
+
+    func test_a_later_port_of_the_same_upstream_version_is_newer() throws {
+        XCTAssertTrue(try version("1.9.5+port.0") < version("1.9.5+port.1"))
+        XCTAssertFalse(try version("1.9.5+port.1") < version("1.9.5+port.0"))
+        XCTAssertNotEqual(try version("1.9.5+port.0"), try version("1.9.5+port.1"))
+    }
+
+    func test_port_numbers_order_as_numbers_not_as_text() throws {
+        XCTAssertTrue(try version("1.9.5+port.9") < version("1.9.5+port.10"))
+    }
+
+    func test_upstream_version_still_wins_over_the_port_number() throws {
+        XCTAssertTrue(try version("1.9.5+port.7") < version("1.9.6+port.0"))
+    }
+
+    func test_a_prerelease_of_an_upstream_version_precedes_its_release() throws {
+        XCTAssertTrue(try version("1.9.5-beta.2+port.0") < version("1.9.5+port.0"))
+        XCTAssertTrue(try version("1.9.5-beta.2+port.0") < version("1.9.5-beta.2+port.1"))
+        XCTAssertTrue(SemanticVersion.isPrerelease("v1.9.5-beta.2+port.0"))
+        XCTAssertFalse(SemanticVersion.isPrerelease("v1.9.5+port.0"))
+    }
+
+    func test_the_same_version_is_equal_to_itself() throws {
+        XCTAssertEqual(try version("1.9.5-beta.2+port.0"), try version("v1.9.5-beta.2+port.0"))
+    }
+}
