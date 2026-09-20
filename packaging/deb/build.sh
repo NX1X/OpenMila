@@ -21,13 +21,19 @@ command -v dpkg-deb >/dev/null || { echo "dpkg-deb not found" >&2; exit 1; }
 
 rm -rf "$STAGE"
 mkdir -p "$STAGE/opt/openmila" "$STAGE/usr/bin" "$STAGE/usr/share/applications" \
-         "$STAGE/usr/share/icons/hicolor/256x256/apps" "$STAGE/usr/share/doc/openmila" "$STAGE/DEBIAN"
+         "$STAGE/usr/share/icons/hicolor" "$STAGE/usr/share/doc/openmila" "$STAGE/DEBIAN"
 
 cp -r "$APPDIR/usr/bin/." "$STAGE/opt/openmila/"
 cp -r "$APPDIR/usr/lib" "$STAGE/opt/openmila/lib"
 cp "$APPDIR/usr/share/applications/io.github.nx1x.openmila.desktop" "$STAGE/usr/share/applications/"
-cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/io.github.nx1x.openmila.png" \
-   "$STAGE/usr/share/icons/hicolor/256x256/apps/"
+# Every size the AppDir carries, not just 256: the icon cache and the panels
+# that ask for 16 or 24 pixels should get a file drawn at that size.
+for dir in "$APPDIR"/usr/share/icons/hicolor/*/apps; do
+  [ -f "$dir/io.github.nx1x.openmila.png" ] || continue
+  size="$(basename "$(dirname "$dir")")"
+  mkdir -p "$STAGE/usr/share/icons/hicolor/$size/apps"
+  cp "$dir/io.github.nx1x.openmila.png" "$STAGE/usr/share/icons/hicolor/$size/apps/"
+done
 cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/usr/share/doc/openmila/"
 
 # Launchers: the app, and the CLI and MCP helper under their own names.

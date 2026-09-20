@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0. -->
+<!-- OpenMila mark: an open ring (the source is open, the audio stays inside)
+     around a three-bar level meter (speech being recorded). Legible at 16px.
+     Only <rect> and <circle> are used, so brand/render-icons.py can rasterise
+     this file with the Python standard library alone. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"
+     role="img" aria-label="OpenMila">
+  <defs>
+    <linearGradient id="om-tile" gradientUnits="userSpaceOnUse" x1="128" y1="0" x2="128" y2="256">
+      <stop offset="0" stop-color="#3D9BFF"/>
+      <stop offset="1" stop-color="#0057D8"/>
+    </linearGradient>
+  </defs>
+  <g id="mark">
+    <rect x="0" y="0" width="256" height="256" rx="58" fill="url(#om-tile)"/>
+    <circle cx="128" cy="128" r="80" fill="none" stroke="#FFFFFF" stroke-width="20"
+            stroke-linecap="round" stroke-dasharray="410.5 92.15" stroke-dashoffset="456.58"/>
+    <rect x="84" y="100" width="24" height="56" rx="12" fill="#FFFFFF"/>
+    <rect x="116" y="80" width="24" height="96" rx="12" fill="#FFFFFF"/>
+    <rect x="148" y="100" width="24" height="56" rx="12" fill="#FFFFFF"/>
+  </g>
+</svg>

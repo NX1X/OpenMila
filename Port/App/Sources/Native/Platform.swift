@@ -38,6 +38,34 @@ struct ContextMenuItem {
 }
 #endif
 
+/// Where the app's own artwork is, for the surfaces that ask for it by name or
+/// by path. The names match `packaging/`: the icon files installed into the
+/// hicolor theme and the `.desktop` entry's `Icon=` are all the application id,
+/// and the mark that ships beside the binaries is `openmila.png`.
+enum AppBranding {
+    static let iconName = "io.github.nx1x.openmila"
+    static let markFileName = "openmila.png"
+
+    /// Directories that may hold the app's own hicolor tree. A distribution
+    /// package installs into the system theme and needs none of this; an
+    /// AppImage or a portable build carries its own `share/icons` beside the
+    /// `bin` directory, and GTK only looks there if it is told to.
+    static var iconSearchPaths: [String] {
+        var roots: [URL] = []
+        if let override = ProcessInfo.processInfo.environment["OPENMILA_RESOURCES"] {
+            roots.append(URL(fileURLWithPath: override))
+        }
+        roots.append(URL(fileURLWithPath: CommandLine.arguments.first ?? "")
+            .resolvingSymlinksInPath().deletingLastPathComponent())
+        var paths: [String] = []
+        for root in roots {
+            let path = root.deletingLastPathComponent().appendingPathComponent("share/icons").path
+            if !paths.contains(path) { paths.append(path) }
+        }
+        return paths
+    }
+}
+
 /// An icon from the platform's own icon set.
 struct PlatformIcon: View {
     let name: String
@@ -75,6 +103,18 @@ extension View {
         if enabled { recordingDropTarget(onDrop) } else { self }
         #else
         self
+        #endif
+    }
+
+    /// Shows the mark as the window's icon, where the toolkit has a way to set
+    /// one. On Windows there is nothing to do at runtime: WinUI takes the
+    /// window icon from the executable's own icon resource, which
+    /// `packaging\windows\package.ps1` compiles into `openmila.exe`.
+    func platformWindowIcon(named name: String, searchPaths: [String]) -> some View {
+        #if os(Linux)
+        return windowIcon(named: name, searchPaths: searchPaths)
+        #else
+        return self
         #endif
     }
 }

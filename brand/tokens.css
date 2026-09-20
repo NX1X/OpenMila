@@ -1,0 +1,92 @@
+/* Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0. */
+/*
+ * OpenMila design tokens for the website. Same values as brand/tokens.json.
+ * Import this file first, then override nothing: change brand/tokens.json and
+ * this file together, and keep both in step with Port/App/Sources/Theme/Theme.swift.
+ *
+ * Light is the default. Dark follows the reader's system setting unless the
+ * page pins a theme with data-theme="light" or data-theme="dark" on <html>.
+ */
+
+:root {
+  /* Brand ------------------------------------------------------------- */
+  --om-accent: #007aff;
+  --om-accent-soft: #3d9bff;
+  --om-accent-strong: #0057d8;
+  --om-recording: #ff3b30;
+  --om-danger: #ff3b30;
+  --om-success: #34c759;
+  --om-canvas-top: #0a1729;
+  --om-canvas-bottom: #060c16;
+
+  /* Speakers, in the app's own order --------------------------------- */
+  --om-speaker-1: #007aff;
+  --om-speaker-2: #34c759;
+  --om-speaker-3: #ff9500;
+  --om-speaker-4: #af52de;
+  --om-speaker-5: #ff2d55;
+  --om-speaker-6: #30b0c7;
+  --om-speaker-7: #5856d6;
+  --om-speaker-8: #a2845e;
+
+  /* Surfaces and text: light ------------------------------------------ */
+  --om-surface: #ffffff;
+  --om-surface-muted: #f5f6f8;
+  --om-surface-raised: #ffffff;
+  --om-border: #e3e6ea;
+  --om-ink: #121417;
+  --om-muted: #8c8c94;
+  --om-link: var(--om-accent-strong);
+  --om-focus: #007aff;
+
+  /* Spacing: a 4px scale ---------------------------------------------- */
+  --om-space-1: 4px;
+  --om-space-2: 8px;
+  --om-space-3: 12px;
+  --om-space-4: 16px;
+  --om-space-5: 24px;
+  --om-space-6: 32px;
+  --om-space-7: 48px;
+  --om-space-8: 64px;
+  /* Clear space around any lockup: one quarter of the mark's height. */
+  --om-logo-clear-space: 25%;
+
+  /* Radii: the tile's corner is 22.7% of its side, as in mark.svg ----- */
+  --om-radius-sm: 6px;
+  --om-radius-md: 10px;
+  --om-radius-lg: 16px;
+  --om-radius-tile: 22.7%;
+
+  /* Type --------------------------------------------------------------- */
+  --om-font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans",
+    "Noto Sans Hebrew", "Helvetica Neue", Arial, sans-serif;
+  --om-font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas,
+    "DejaVu Sans Mono", "Liberation Mono", monospace;
+  --om-weight-body: 400;
+  --om-weight-strong: 600;
+  --om-line-height: 1.55;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --om-surface: #14171a;
+    --om-surface-muted: #1d2125;
+    --om-surface-raised: #20252a;
+    --om-border: #2c3238;
+    --om-ink: #f2f4f7;
+    --om-muted: #9aa0a8;
+    --om-link: var(--om-accent-soft);
+    --om-focus: #3d9bff;
+  }
+}
+
+:root[data-theme="dark"] {
+  --om-surface: #14171a;
+  --om-surface-muted: #1d2125;
+  --om-surface-raised: #20252a;
+  --om-border: #2c3238;
+  --om-ink: #f2f4f7;
+  --om-muted: #9aa0a8;
+  --om-link: var(--om-accent-soft);
+  --om-focus: #3d9bff;
+}

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0. -->
+<!-- The 16px cut of brand/mark.svg. Three bars of 24 units are under two
+     pixels wide at that size and smear into the ring, so the small cut keeps
+     one bar, widens the ring's opening and thickens both. Same idea, same
+     proportions, fewer parts. brand/render-icons.py uses this file for 16px
+     and brand/mark.svg for every size above it. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"
+     role="img" aria-label="OpenMila">
+  <defs>
+    <linearGradient id="om-tile" gradientUnits="userSpaceOnUse" x1="128" y1="0" x2="128" y2="256">
+      <stop offset="0" stop-color="#3D9BFF"/>
+      <stop offset="1" stop-color="#0057D8"/>
+    </linearGradient>
+  </defs>
+  <g id="mark">
+    <rect x="0" y="0" width="256" height="256" rx="58" fill="url(#om-tile)"/>
+    <circle cx="128" cy="128" r="78" fill="none" stroke="#FFFFFF" stroke-width="26"
+            stroke-linecap="round" stroke-dasharray="381.18 108.91" stroke-dashoffset="435.63"/>
+    <rect x="114" y="78" width="28" height="100" rx="14" fill="#FFFFFF"/>
+  </g>
+</svg>
