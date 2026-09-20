@@ -49,7 +49,7 @@ of it on a Windows desktop yet.
 
 | # | Feature | Linux | Windows |
 |---|---|---|---|
-| 19 | On-device whisper.cpp, ivrit.ai large-v3 (Hebrew) and large-v3-turbo (English) | done - CPU; whisper.cpp at the pinned commit 9386f23 | written - same source build |
+| 19 | On-device whisper.cpp, ivrit.ai large-v3 (Hebrew) and large-v3-turbo (English) | partial - runs, but on the CPU only: no GPU backend is built and `use_gpu` is off without Metal. Mila uses the Mac's GPU, so this is the port's largest performance gap. See [HARDWARE.md](HARDWARE.md) | partial - same, CPU only |
 | 20 | CoreML / ANE encoder and its banner | n/a - no ANE; `.mlmodelc` downloads skipped | n/a |
 | 21 | First-launch model download with progress and SHA-256 verification | done - verified by downloading both models | written |
 | 22 | Model deletion frees the whole install and keeps the choice sane | done - upstream `ModelManager` | written |
