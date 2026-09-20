@@ -150,6 +150,10 @@ let package = Package(
                 .linkedLibrary("wintrust", .when(platforms: [.windows])),
                 // ActivateAudioInterfaceAsync, for per-application capture.
                 .linkedLibrary("mmdevapi", .when(platforms: [.windows])),
+                // The interface GUIDs the audio client needs. The SDK
+                // declares them EXTERN_C rather than with DEFINE_GUID, so
+                // INITGUID cannot instantiate them and they come from here.
+                .linkedLibrary("uuid", .when(platforms: [.windows])),
             ]
         ),
         .target(
