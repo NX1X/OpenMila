@@ -81,7 +81,7 @@ of it on a Windows desktop yet.
 |---|---|---|---|
 | 39 | Global hotkeys for English and Hebrew, configurable, conflict-checked | done - `XGrabKey` where an X display answers (including XWayland), the XDG `GlobalShortcuts` portal on a pure Wayland session. Both paths pick themselves and were exercised with `openmila-cli hotkey`; a key press through the portal still needs a human at a Wayland desktop to confirm | written - `RegisterHotKey` on a dedicated message thread |
 | 40 | Dictation overlay pill with live text, level and busy state | done - app window; no layer-shell, so it is an ordinary always-on-top window | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
-| 41 | Paste at the cursor into the previous app, with clipboard fallback | partial - `wl-copy`/`xclip` plus `wtype`/`xdotool`; no `RemoteDesktop` portal path, so a bare Wayland session falls back to the clipboard | written - clipboard plus `SendInput` Ctrl+V |
+| 41 | Paste at the cursor into the previous app, with clipboard fallback | done - `xdotool` or `wtype` where they are installed, the `RemoteDesktop` portal on a Wayland session once the user grants it (`openmila-cli grant-typing`, or the Settings button), and the clipboard with a notification otherwise. Dictation never waits on the consent dialog: without permission it falls back in 0.1 s | written - clipboard plus `SendInput` Ctrl+V |
 | 42 | Dictations saved under History | done | written |
 
 ## AI features

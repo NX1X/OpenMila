@@ -176,6 +176,23 @@ case "notify":
     host.notifier.notify(title: "OpenMila", body: args.dropFirst().joined(separator: " ").isEmpty ? "Notification test" : args.dropFirst().joined(separator: " "))
     print("sent")
 
+case "grant-typing":
+    // The Wayland portal asks once, with a dialog. This is that request, so
+    // the permission can be granted deliberately rather than in the middle of
+    // a dictation.
+    #if os(Linux)
+    let injector = LinuxTextInjector(notifier: host.notifier,
+                                     stateDirectory: host.paths.dataDirectory)
+    if injector.canTypeWithoutHelp {
+        print("typing already works on this session")
+    } else {
+        print("asking the desktop for permission to type (answer the dialog)...")
+        print(injector.requestTypingPermission() ? "granted" : "not granted")
+    }
+    #else
+    print("this command is for Wayland sessions on Linux")
+    #endif
+
 case "inject":
     let text = args.dropFirst().joined(separator: " ")
     guard let injector = host.textInjector else { fail("this system has no text injector") }
@@ -266,5 +283,5 @@ case "transcribe":
     } catch { fail("\(error.localizedDescription)") }
 
 default:
-    print("usage: openmila-cli devices | app-audio | gpu | windows | logs | play | notify | inject | inhibit | hotkey | meetings | update-check | session | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
+    print("usage: openmila-cli devices | app-audio | gpu | windows | grant-typing | logs | play | notify | inject | inhibit | hotkey | meetings | update-check | session | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
 }
