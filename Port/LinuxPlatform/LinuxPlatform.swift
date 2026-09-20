@@ -19,7 +19,7 @@ public enum LinuxPlatform {
         let notifier = LinuxNotifier()
         return PlatformServices(
             microphone: MiniaudioMicrophone(),
-            appAudio: MiniaudioSystemLoopback(),
+            appAudio: LinuxAppAudioCapture(),
             hotkeys: X11Hotkeys.isAvailable ? try? X11Hotkeys() : nil,
             textInjector: LinuxTextInjector(notifier: notifier),
             secrets: LinuxSecretStore(fallbackDirectory: paths.dataDirectory.appendingPathComponent("secrets", isDirectory: true)),

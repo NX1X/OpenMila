@@ -45,6 +45,14 @@ checked against a pinned SHA-256 before it is used.
 The data folder is named `Mila` on purpose: the MCP helper and other shared
 code look for it by that name.
 
+### Recording one application
+
+OpenMila can record a single application's sound - the meeting, not your music
+- by asking PipeWire to link that application's output to a capture stream.
+That needs PipeWire's own tools (`pipewire-bin`: `pw-dump` and `pw-record`),
+which most PipeWire installs already have. Without them the picker still
+offers the whole-system monitors.
+
 ### Speaker diarization
 
 Naming who said what needs a Python runtime, which the packages ship when it

@@ -165,7 +165,8 @@ Each package ships its own license text in its installed distribution metadata; 
 On Linux: GTK 4 and its stack (LGPL-2.1-or-later), libadwaita (LGPL-2.1-or-later),
 libsecret and GLib (LGPL-2.1-or-later, for the desktop keyring),
 PipeWire or PulseAudio client libraries (MIT / LGPL), libX11 (MIT), and,
-when installed, ffmpeg (for AAC and non-WAV audio), `wl-copy`/`xclip`,
+when installed, ffmpeg (for AAC and non-WAV audio), `pw-dump`/`pw-record`
+(per-application audio capture), `wl-copy`/`xclip`,
 `wtype`/`xdotool` and `notify-send`. These are linked or called at run time
 from the system's own packages and are not redistributed by OpenMila.
 

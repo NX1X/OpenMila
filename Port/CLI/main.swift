@@ -84,8 +84,17 @@ case "devices":
         for device in devices {
             print("\(device.isDefault ? "*" : " ") \(device.name)\n    id: \(device.id)")
         }
-        let system = try MiniaudioSystemLoopback().targets()
-        print("system-audio targets: \(system.isEmpty ? "none" : system.map(\.name).joined(separator: ", "))")
+        let system = try host.appAudio?.targets() ?? []
+        print("app-audio targets:")
+        if system.isEmpty { print("    none") }
+        for target in system {
+            let kind: String
+            switch target.scope {
+            case .application(let pid): kind = "application pid \(pid)"
+            case .wholeSystem: kind = "whole system"
+            }
+            print("    \(target.name)\n        id: \(target.id)  (\(kind))")
+        }
     } catch { fail("\(error.localizedDescription)") }
 
 case "record":
@@ -109,6 +118,38 @@ case "record":
         if let model = option("--model", in: args) {
             await transcribe(captured, language: language, modelPath: model)
         }
+    } catch { fail("\(error.localizedDescription)") }
+
+case "app-audio":
+    // Records one application's output (or a whole-system monitor) so the
+    // per-app path can be checked without the UI:
+    //   openmila-cli app-audio --target 80 --seconds 3 --out /tmp/app.wav
+    guard let appAudio = host.appAudio else { fail("this system has no app-audio capture") }
+    do {
+        let targets = try appAudio.targets()
+        guard !targets.isEmpty else { fail("nothing is playing audio") }
+        let chosen: AudioCaptureTarget
+        if let id = option("--target", in: args) {
+            guard let match = targets.first(where: { $0.id == id }) else { fail("no target with id \(id)") }
+            chosen = match
+        } else {
+            chosen = targets[0]
+        }
+        let seconds = Double(option("--seconds", in: args) ?? "3") ?? 3
+        let session = try appAudio.start(target: chosen)
+        print("recording \(seconds)s from \(chosen.name) via \(session.backendName)...")
+        var captured: [Float] = []
+        let wanted = Int(seconds * PlatformAudioFormat.sampleRate)
+        let deadline = Date().addingTimeInterval(seconds + 5)
+        for await chunk in session.samples {
+            captured.append(contentsOf: chunk)
+            if captured.count >= wanted || Date() > deadline { break }
+        }
+        session.stop()
+        let peak = captured.map { abs($0) }.max() ?? 0
+        print("captured \(captured.count) samples (\(String(format: "%.2f", Double(captured.count) / 16_000))s), peak \(String(format: "%.3f", peak))")
+        if let out = option("--out", in: args) { try writeWAV(captured, to: out) }
+        guard !captured.isEmpty else { fail("no audio captured") }
     } catch { fail("\(error.localizedDescription)") }
 
 case "logs":
@@ -206,5 +247,5 @@ case "transcribe":
     } catch { fail("\(error.localizedDescription)") }
 
 default:
-    print("usage: openmila-cli devices | logs | play | notify | inject | inhibit | hotkey | meetings | update-check | session | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
+    print("usage: openmila-cli devices | app-audio | logs | play | notify | inject | inhibit | hotkey | meetings | update-check | session | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
 }

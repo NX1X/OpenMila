@@ -24,7 +24,7 @@ evidence is direct. Windows work is behind it by design.
 | # | Feature | Linux | Windows |
 |---|---|---|---|
 | 1 | Microphone recording, device picker, pinned input, live input level | done - miniaudio, `openmila-cli devices` and `record` | written - same capture code, WASAPI backend |
-| 2 | System audio from one chosen app | partial - whole-system loopback (`MiniaudioSystemLoopback`); per-app targeting through PipeWire is not done | partial - whole-system loopback; WASAPI process loopback not done |
+| 2 | System audio from one chosen app | done - PipeWire links a capture stream to the chosen application's output (`pw-record --target`), with whole-system monitors still offered; verified with `openmila-cli app-audio` (3.07 s captured from one player, peak 0.78) | partial - whole-system loopback; WASAPI process loopback not done |
 | 3 | Meeting mode: mic + app audio mixed to one mono 16 kHz WAV | done - `Port/Recording/RecordingSession.swift`, `RecordingTests` | written |
 | 4 | Independent mic / app-audio toggles | done | written |
 | 5 | Pause and resume with the paused span absent from audio and timer | done - `RecordingTests` | written |

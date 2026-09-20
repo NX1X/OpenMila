@@ -191,4 +191,52 @@ final class SecretServiceStoreTests: XCTestCase {
         XCTAssertNil(store.load(key: key))
     }
 }
+/// The pw-dump reading behind per-application audio capture. The graph is a
+/// fixture, so this runs anywhere - the live path is exercised by
+/// `openmila-cli app-audio`.
+final class PipeWireGraphTests: XCTestCase {
+    private func object(_ props: [String: Any]) -> [String: Any] {
+        ["info": ["props": props]]
+    }
+
+    func test_an_application_stream_becomes_a_target() throws {
+        let target = try XCTUnwrap(PipeWireAppAudioCapture.target(from: object([
+            "media.class": "Stream/Output/Audio",
+            "object.serial": 73,
+            "application.name": "Zoom",
+            "media.name": "Zoom Meeting",
+            "application.process.id": 4242,
+        ])))
+        XCTAssertEqual(target.id, "73")
+        XCTAssertEqual(target.name, "Zoom - Zoom Meeting")
+        XCTAssertEqual(target.scope, .application(processID: 4242))
+    }
+
+    func test_a_stream_without_a_pid_still_becomes_a_target() throws {
+        let target = try XCTUnwrap(PipeWireAppAudioCapture.target(from: object([
+            "media.class": "Stream/Output/Audio",
+            "object.serial": 5,
+            "node.name": "pw-play",
+        ])))
+        XCTAssertEqual(target.id, "5")
+        XCTAssertEqual(target.name, "pw-play")
+        XCTAssertEqual(target.scope, .application(processID: 0))
+    }
+
+    func test_inputs_sinks_and_video_are_not_targets() {
+        for mediaClass in ["Stream/Input/Audio", "Audio/Sink", "Audio/Source", "Stream/Output/Video"] {
+            XCTAssertNil(PipeWireAppAudioCapture.target(from: object([
+                "media.class": mediaClass, "object.serial": 9, "application.name": "x",
+            ])), "\(mediaClass) should not be offered as an app-audio target")
+        }
+    }
+
+    func test_a_stream_with_no_serial_is_skipped() {
+        // Without a serial there is nothing to hand --target, and the node id
+        // is not a safe substitute: it is reused as nodes come and go.
+        XCTAssertNil(PipeWireAppAudioCapture.target(from: object([
+            "media.class": "Stream/Output/Audio", "application.name": "Zoom",
+        ])))
+    }
+}
 #endif
