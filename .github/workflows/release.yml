@@ -187,7 +187,7 @@ jobs:
           cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS
 
       - name: Attest what was built
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
           subject-path: "release/*"
 
