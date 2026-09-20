@@ -15,6 +15,9 @@
 #include "include/om_stretch.h"
 
 #include <math.h>
+// MSVC's math.h does not define M_PI without _USE_MATH_DEFINES, and the
+// constant is cheaper to state than to configure.
+#define OM_PI 3.14159265358979323846
 #include <stdlib.h>
 #include <string.h>
 
@@ -78,7 +81,7 @@ om_stretch *om_stretch_create(uint32_t sample_rate, uint32_t channels) {
     s->overlap = (float *)calloc((size_t)s->hop * channels, sizeof(float));
     if (s->hann == NULL || s->overlap == NULL) { om_stretch_destroy(s); return NULL; }
     for (int i = 0; i < s->window; i++) {
-        s->hann[i] = 0.5f - 0.5f * cosf(2.0f * (float)M_PI * (float)i / (float)(s->window - 1));
+        s->hann[i] = 0.5f - 0.5f * cosf(2.0f * (float)OM_PI * (float)i / (float)(s->window - 1));
     }
     return s;
 }
