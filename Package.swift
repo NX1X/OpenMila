@@ -118,7 +118,21 @@ let package = Package(
             path: "Port/LinuxPlatform"
         ),
         // Windows headers Swift's WinSDK module does not expose.
-        .systemLibrary(name: "CWinShim", path: "Port/CWinShim"),
+        // A C target rather than a system library: its header must not parse
+        // the Windows SDK headers, which Swift already imports as WinSDK.
+        .target(
+            name: "CWinShim",
+            path: "Port/CWinShim",
+            publicHeadersPath: "include",
+            linkerSettings: [
+                .linkedLibrary("user32", .when(platforms: [.windows])),
+                .linkedLibrary("shell32", .when(platforms: [.windows])),
+                .linkedLibrary("crypt32", .when(platforms: [.windows])),
+                .linkedLibrary("advapi32", .when(platforms: [.windows])),
+                .linkedLibrary("ole32", .when(platforms: [.windows])),
+                .linkedLibrary("wintrust", .when(platforms: [.windows])),
+            ]
+        ),
         .target(
             name: "WindowsPlatform",
             dependencies: [

@@ -66,7 +66,7 @@ public final class WindowsNotifier: Notifier, @unchecked Sendable {
         data.hWnd = window
         data.uID = 1
         data.uFlags = UINT(NIF_INFO | NIF_ICON | NIF_MESSAGE)
-        data.uCallbackMessage = UINT(OM_WM_TRAYICON)
+        data.uCallbackMessage = omTrayIconMessage
         data.hIcon = LoadIconW(nil, IDI_APPLICATION)
         withUnsafeMutablePointer(to: &data.szInfoTitle) { pointer in
             pointer.withMemoryRebound(to: WCHAR.self, capacity: 64) { buffer in
@@ -248,7 +248,10 @@ public struct WindowsBinaryTrust: BinaryTrust {
             data.dwProvFlags = DWORD(WTD_SAFER_FLAG)
             return withUnsafeMutablePointer(to: &file) { filePointer -> Bool in
                 data.pFile = filePointer
-                var action = om_wintrust_generic_verify_v2()
+                var action = GUID()
+                withUnsafeMutableBytes(of: &action) { bytes in
+                    om_wintrust_generic_verify_v2(bytes.bindMemory(to: UInt8.self).baseAddress!)
+                }
                 let status = WinVerifyTrust(nil, &action, &data)
                 data.dwStateAction = DWORD(WTD_STATEACTION_CLOSE)
                 _ = WinVerifyTrust(nil, &action, &data)

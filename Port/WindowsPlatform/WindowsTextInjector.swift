@@ -1,7 +1,6 @@
 // Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
 
 #if os(Windows)
-import CWinShim
 import Foundation
 import PlatformKit
 import WinSDK
