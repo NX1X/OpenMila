@@ -1,3 +1,4 @@
+// Modified by NX1X for OpenMila; see CHANGES.md.
 import Foundation
 
 /// Orchestrates the first-launch download + install of the torch wheel into a
@@ -29,10 +30,27 @@ final class DiarizationBootstrap: ObservableObject {
     /// uses torchaudio for audio I/O (`torchaudio.list_audio_backends()`,
     /// `torchaudio.load()`), so installing only torch produces a broken
     /// pipeline with a confusing `missing_torchaudio` health-check code.
-    static let wheelURLs: [URL] = [
-        URL(string: "https://download.pytorch.org/whl/cpu/torch-\(torchVersion)-cp311-none-macosx_11_0_arm64.whl")!,
-        URL(string: "https://download.pytorch.org/whl/cpu/torchaudio-\(torchaudioVersion)-cp311-cp311-macosx_11_0_arm64.whl")!,
-    ]
+    static let wheelURLs: [URL] = {
+        // The CPU wheels for this platform's bundled CPython 3.11. The macOS
+        // list is upstream's; the others are the same PyTorch build for the
+        // corresponding platform tag.
+        #if os(Linux)
+        return [
+            URL(string: "https://download.pytorch.org/whl/cpu/torch-\(torchVersion)%2Bcpu-cp311-cp311-linux_x86_64.whl")!,
+            URL(string: "https://download.pytorch.org/whl/cpu/torchaudio-\(torchaudioVersion)%2Bcpu-cp311-cp311-linux_x86_64.whl")!,
+        ]
+        #elseif os(Windows)
+        return [
+            URL(string: "https://download.pytorch.org/whl/cpu/torch-\(torchVersion)%2Bcpu-cp311-cp311-win_amd64.whl")!,
+            URL(string: "https://download.pytorch.org/whl/cpu/torchaudio-\(torchaudioVersion)%2Bcpu-cp311-cp311-win_amd64.whl")!,
+        ]
+        #else
+        return [
+            URL(string: "https://download.pytorch.org/whl/cpu/torch-\(torchVersion)-cp311-none-macosx_11_0_arm64.whl")!,
+            URL(string: "https://download.pytorch.org/whl/cpu/torchaudio-\(torchaudioVersion)-cp311-cp311-macosx_11_0_arm64.whl")!,
+        ]
+        #endif
+    }()
 
     /// Extra PyPI specs to install into the user-writable site-packages
     /// after the wheels download. These don't have a fixed wheel URL we

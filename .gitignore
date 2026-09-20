@@ -57,3 +57,6 @@ build-windows/
 dist/
 Port/App/.build/
 Port/App/Package.resolved
+# Dagger generated SDK code
+ci/dagger/internal/
+ci/dagger/dagger.gen.go

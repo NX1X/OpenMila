@@ -1,8 +1,8 @@
 # Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
 #
-# OpenMila's Linux pipeline. The logic lives in ci/run.sh and the environment in
-# ci/Dockerfile, so this file only wires them to GitHub. A Dagger module will
-# call the same script; nothing here should grow beyond glue.
+# OpenMila's Linux pipeline, run through Dagger (ci/dagger). The same
+# `dagger call check` runs on a laptop; this file only installs the pinned
+# Dagger CLI and calls it.
 name: OpenMila Linux
 
 on:
@@ -17,34 +17,30 @@ concurrency:
   group: openmila-linux-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DAGGER_VERSION: "0.21.9"
+  # sha256 of dagger_v0.21.9_linux_amd64.tar.gz, from the release's checksums.txt.
+  DAGGER_SHA256: "33eea0b08d6be444bada18e64b2216459100d6070abcb4b5345cee40c9fff982"
+  DAGGER_NO_NAG: "1"
+
 jobs:
   linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           submodules: recursive
 
-      - name: Build the CI image (base pinned by digest in ci/Dockerfile)
-        run: docker build -t openmila-ci:local -f ci/Dockerfile ci
-
-      - name: Fetch the tiny Whisper model for the end-to-end check
+      - name: Install the Dagger CLI (pinned, checksum verified)
         run: |
-          mkdir -p "$RUNNER_TEMP/models"
-          curl -fL --retry 4 -o "$RUNNER_TEMP/models/ggml-tiny.bin" \
-            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
-          echo "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21  $RUNNER_TEMP/models/ggml-tiny.bin" | sha256sum -c -
+          cd "$RUNNER_TEMP"
+          file="dagger_v${DAGGER_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 4 -o "$file" "https://github.com/dagger/dagger/releases/download/v${DAGGER_VERSION}/$file"
+          echo "${DAGGER_SHA256}  $file" | sha256sum -c -
+          tar xzf "$file" dagger
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
-      - name: Run the pipeline
-        run: |
-          docker run --rm \
-            -v "$PWD":/src:ro \
-            -v "$RUNNER_TEMP/models":/models:ro \
-            -e OPENMILA_E2E_MODEL=/models/ggml-tiny.bin \
-            openmila-ci:local bash -c '
-              set -e
-              mkdir -p /work/repo
-              cd /src && tar --exclude=./.build -cf - . | tar -xf - -C /work/repo
-              cd /work/repo && ci/run.sh all'
+      - name: Run the pipeline (dagger call check)
+        run: dagger call --progress=plain check

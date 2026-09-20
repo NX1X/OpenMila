@@ -20,7 +20,19 @@ docker run --rm -v "$PWD":/src:ro -v ~/.cache/whisper-models:/models:ro \
 The `core` stage runs upstream's own unit tests. Tests known to fail off macOS
 are listed by name in `run.sh`; any other failure fails the build.
 
-OpenMila is built with [Dagger](https://dagger.io). The Dagger module wraps
-these same stages; it is pending a Dagger release whose SDK install works (the
-1.0.0-beta.11 CLI fails `dagger sdk install` for both Go and Python with
-`repository does not contain ref "v1@v1"`).
+## Dagger
+
+OpenMila's pipeline is a [Dagger](https://dagger.io) module (`ci/dagger`,
+`dagger.json` at the root). It builds `ci/Dockerfile` and runs the stages of
+`ci/run.sh` inside it, with build output, the whisper.cpp build and SwiftPM
+caches kept in cache volumes.
+
+```bash
+dagger functions                        # list them
+dagger call check                       # every stage, as CI runs it
+dagger call stage --name=core           # one stage
+dagger call app-image export --path=dist   # the Linux AppImage
+```
+
+Dagger v0.21.9 or newer is needed. GitHub Actions installs the same CLI version,
+checksum-pinned, and runs `dagger call check`.
