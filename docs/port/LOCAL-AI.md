@@ -34,14 +34,19 @@ Western, open-licensed, in sizes that fit the machines the port targets.
 The first is what "just set it up" picks. `LocalModel.catalogue` is the
 list, and a test pins the rule.
 
-| Model | Publisher | Licence | Size | Memory |
-|---|---|---|---|---|
-| Mistral 7B (default) | Mistral AI, France | Apache-2.0 | 4.4 GB | 8 GB |
-| Mistral NeMo 12B | Mistral AI and NVIDIA | Apache-2.0 | 7.1 GB | 16 GB |
-| OLMo 2 7B | Allen Institute for AI, USA | Apache-2.0 | 4.5 GB | 8 GB |
-| Gemma 3 4B | Google, USA | Gemma terms | 3.3 GB | 8 GB |
-| Llama 3.1 8B | Meta, USA | Llama 3.1 community licence | 4.9 GB | 8 GB |
-| SmolLM2 1.7B | Hugging Face | Apache-2.0 | 1.8 GB | 4 GB |
+| Model | Publisher | Licence | Size | Memory | Where it comes from |
+|---|---|---|---|---|---|
+| Mistral 7B (default) | [Mistral AI](https://mistral.ai), France | Apache-2.0 | 4.4 GB | 8 GB | [ollama.com/library/mistral](https://ollama.com/library/mistral) |
+| Mistral NeMo 12B | Mistral AI and NVIDIA | Apache-2.0 | 7.1 GB | 16 GB | [ollama.com/library/mistral-nemo](https://ollama.com/library/mistral-nemo) |
+| OLMo 2 7B | [Allen Institute for AI](https://allenai.org), USA | Apache-2.0 | 4.5 GB | 8 GB | [ollama.com/library/olmo2](https://ollama.com/library/olmo2) |
+| Gemma 3 4B | [Google](https://ai.google.dev/gemma), USA | Gemma terms | 3.3 GB | 8 GB | [ollama.com/library/gemma3](https://ollama.com/library/gemma3) |
+| Llama 3.1 8B | [Meta](https://www.llama.com), USA | Llama 3.1 community licence | 4.9 GB | 8 GB | [ollama.com/library/llama3.1](https://ollama.com/library/llama3.1) |
+| SmolLM2 1.7B | [Hugging Face](https://huggingface.co/HuggingFaceTB) | Apache-2.0 | 1.8 GB | 4 GB | [ollama.com/library/smollm2](https://ollama.com/library/smollm2) |
+
+The runtime is [Ollama](https://github.com/ollama/ollama), MIT-licensed,
+fetched from its GitHub releases at the pinned version. Models are pulled
+from the Ollama library over HTTPS by the running server; the app itself
+never contacts a model host.
 
 Any other model Ollama can pull works too: pull it by hand with the managed
 runtime (`<cache>/local-ai/runtime/bin/ollama pull <name>`) and type its name
