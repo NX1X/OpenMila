@@ -31,6 +31,7 @@ struct SettingsView: View {
     @State var watchedError: String?
     @State var gpuEnabled = true
     @State var gpuDevice = GPUSettings.automaticLabel
+    @State var aiProviderStatus = ""
     @State var hotkeys: Observed<HotkeySettings>
     @State var chordEN = ""
     @State var chordHE = ""
@@ -357,13 +358,88 @@ struct SettingsView: View {
     var aiProvider: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("AI Provider").font(.headline)
-            Picker(of: LLMTool.allCases.map(\.rawValue), selection: Binding(
-                get: { llm.object.tool.rawValue },
-                set: { if let v = $0, let t = LLMTool(rawValue: v) { llm.object.tool = t } }))
-            TextField("Executable path (optional)", text: Binding(get: { llm.object.executablePath }, set: { llm.object.executablePath = $0 }))
-            TextField("OpenAI-compatible base URL", text: Binding(get: { llm.object.openAIBaseURL }, set: { llm.object.openAIBaseURL = $0 }))
-            TextField("Model name", text: Binding(get: { llm.object.openAIModelName }, set: { llm.object.openAIModelName = $0 }))
-            SecureField("API key", text: Binding(get: { llm.object.openAIAPIKey }, set: { llm.object.openAIAPIKey = $0 }))
+            // Display names, not raw values: the picker used to read
+            // "openai_compatible", and the endpoint presets behind it were not
+            // offered at all, so the only way to reach a local model was to
+            // know its URL and type it in.
+            Picker(of: LLMTool.allCases.map(\.displayName), selection: Binding(
+                get: { llm.object.tool.displayName },
+                set: { name in
+                    if let tool = LLMTool.allCases.first(where: { $0.displayName == name }) {
+                        llm.object.tool = tool
+                    }
+                }))
+
+            switch llm.object.tool {
+            case .none:
+                Text("AI features are off. Summaries, suggested names and Live AI do nothing until a provider is chosen.")
+                    .font(.caption).foregroundColor(Theme.secondaryText)
+            case .claude, .cursor, .gemini:
+                Text("Runs the \(llm.object.tool.displayName) command on this machine, using the login it already has. Leave the path empty unless the command is somewhere unusual.")
+                    .font(.caption).foregroundColor(Theme.secondaryText)
+                TextField("Executable path (optional)", text: Binding(get: { llm.object.executablePath }, set: { llm.object.executablePath = $0 }))
+            case .openaiCompatible:
+                Text("Any endpoint that speaks the OpenAI chat API, including one on this machine.")
+                    .font(.caption).foregroundColor(Theme.secondaryText)
+                Picker(of: OpenAIProvider.allCases.map(\.displayName), selection: Binding(
+                    get: { llm.object.openAIProvider.displayName },
+                    set: { name in
+                        guard let provider = OpenAIProvider.allCases.first(where: { $0.displayName == name })
+                        else { return }
+                        llm.object.openAIProvider = provider
+                        // The preset fills the URL in; Custom leaves whatever
+                        // the user typed alone.
+                        if provider != .custom { llm.object.openAIBaseURL = provider.baseURL }
+                    }))
+                TextField("Base URL", text: Binding(get: { llm.object.openAIBaseURL }, set: { llm.object.openAIBaseURL = $0 }))
+                TextField("Model name", text: Binding(get: { llm.object.openAIModelName }, set: { llm.object.openAIModelName = $0 }))
+                if llm.object.openAIProvider == .ollamaLocal {
+                    Text("Ollama runs the model on this machine and needs no key. Start it with `ollama serve`, pull a model with `ollama pull mistral`, then put that name in the field above. Nothing leaves the machine.")
+                        .font(.caption).foregroundColor(Theme.secondaryText)
+                } else {
+                    SecureField("API key", text: Binding(get: { llm.object.openAIAPIKey }, set: { llm.object.openAIAPIKey = $0 }))
+                    Text("The transcript is sent to this endpoint when a summary is generated.")
+                        .font(.caption).foregroundColor(Theme.danger)
+                }
+            }
+
+            Divider()
+            HStack {
+                Button("Test the provider") { testAIProvider() }
+                Text(aiProviderStatus).font(.caption)
+                    .foregroundColor(aiProviderStatus.hasPrefix("works") ? Theme.success : Theme.secondaryText)
+            }
+            Text(llm.object.isConfigured
+                 ? "Ready. AI features can use this provider."
+                 : "Not ready yet: choose a provider and fill in what it needs.")
+                .font(.caption).foregroundColor(Theme.secondaryText)
+        }
+    }
+
+    /// Sends one short prompt through whatever is configured, so a user can see
+    /// that it answers before trusting it with a recording.
+    func testAIProvider() {
+        aiProviderStatus = "asking..."
+        let settings = model.llmSettings
+        Task { @MainActor in
+            do {
+                // The same entry point every AI feature uses, with the same
+                // settings threaded through, so a green result here means the
+                // summariser will get through too.
+                let reply = try await LLMRunner.run(
+                    tool: settings.tool,
+                    prompt: "Reply with the single word: ready.",
+                    transcript: "",
+                    executablePathOverride: settings.executablePath.isEmpty ? nil : settings.executablePath,
+                    model: settings.tool == .openaiCompatible ? settings.openAIModelName : nil,
+                    timeout: 60,
+                    openAIBaseURL: settings.tool == .openaiCompatible ? settings.openAIBaseURL : nil,
+                    openAIAPIKey: settings.tool == .openaiCompatible ? settings.openAIAPIKey : nil)
+                let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                aiProviderStatus = text.isEmpty ? "answered, but with nothing" : "works: \(text.prefix(40))"
+            } catch {
+                aiProviderStatus = "failed: \(error.localizedDescription)"
+            }
         }
     }
 

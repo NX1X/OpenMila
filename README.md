@@ -24,7 +24,7 @@ Website: [openmila.nx1xlab.dev](https://openmila.nx1xlab.dev)
 OpenMila does not build for macOS and does not try to.
 
 ## Status
-
+What is left is the part only you can do: install +port.3 on both machines and use it. On Windows there should be no admin prompt, no console window, and the app should actually open this time. If anything goes wrong, the app writes to %LOCALAPPDATA%\OpenMila\logs on Windows and ~/.local/state/openmila/logs on Linux - that log is the fastest route to a diagnosis.
 Early development, not yet released. Follow the
 [releases page](https://github.com/NX1X/OpenMila/releases) for the first
 Linux beta.
@@ -39,6 +39,8 @@ nobody has run any of it on a Windows desktop yet. Treat it as untested.
 
 [`docs/port/PARITY.md`](docs/port/PARITY.md) tracks every Mila feature with a
 per-system status and the evidence behind it, including what is still missing.
+[`docs/port/ROADMAP.md`](docs/port/ROADMAP.md) is the ordered list of what still
+stands between the current build and full parity, and what done means for each.
 
 ## Architecture
 

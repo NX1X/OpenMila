@@ -30,6 +30,12 @@ enum Theme {
     }
 
     static let sidebarMinWidth = 230
+    /// Title-bar colours for Windows, as 0x00BBGGRR (what DWM takes), matching
+    /// the window background in each scheme so the caption reads as part of
+    /// the app. Kept beside the other tokens so a palette change updates them.
+    static let windowsCaptionDark: UInt32 = 0x001E1E1E
+    static let windowsCaptionLight: UInt32 = 0x00FAFAFA
+
     static let windowMinWidth = 1000
     static let windowMinHeight = 620
 }

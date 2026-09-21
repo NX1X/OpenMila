@@ -67,3 +67,4 @@ diarization/cache/
 # The website is its own repository (NX1X/OpenMila-website), checked out
 # beside this one. It reads docs/port/PARITY.md from here at build time.
 website/
+packaging/winget/out/

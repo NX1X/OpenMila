@@ -28,7 +28,32 @@ struct OpenMilaApp: App {
         }
         #endif
         model = AppModel()
+        #if os(Windows)
+        // WinUI themes the inside of the window and nothing outside it, so a
+        // dark app sat under a white caption bar. The bar is painted to match
+        // once the first window exists, and again a little later in case the
+        // toolkit created it after the first pass; both calls are cheap and
+        // harmless when nothing changed. The colour follows Windows' own
+        // apps-dark-mode switch, which is also what the toolkit reads.
+        Task { @MainActor in
+            for delay in [UInt64(300), 1500, 4000] {
+                try? await Task.sleep(nanoseconds: delay * 1_000_000)
+                Self.matchTitleBarToTheme()
+            }
+        }
+        #endif
     }
+
+    #if os(Windows)
+    static func matchTitleBarToTheme() {
+        let dark = om_apps_use_dark_theme() != 0
+        // 0x00BBGGRR: the theme's window background, so the caption reads as
+        // part of the app rather than a strip of a different colour.
+        let caption: UInt32 = dark ? Theme.windowsCaptionDark : Theme.windowsCaptionLight
+        let text: UInt32 = dark ? 0x00F5F5F5 : 0x00202020
+        _ = om_apply_title_bar_theme(dark ? 1 : 0, caption, text)
+    }
+    #endif
 
     var body: some Scene {
         WindowGroup(AppIdentity.name) {

@@ -17,6 +17,62 @@ const uint16_t *om_idi_application(void) { return (const uint16_t *)IDI_APPLICAT
 // shobjidl_core.h, which drags in a large part of the COM headers; it is
 // resolved at run time instead, which also keeps the call harmless on a
 // Windows build where the export is somehow missing.
+// dwmapi is resolved at run time for the same reason shell32 is above: no
+// link-time dependency, and a Windows too old to have the attribute simply
+// leaves the caption alone.
+typedef HRESULT(WINAPI *dwm_set_attr_fn)(HWND, DWORD, LPCVOID, DWORD);
+
+struct om_title_bar_args {
+    dwm_set_attr_fn set;
+    BOOL dark;
+    DWORD caption;
+    DWORD text;
+    DWORD pid;
+    int32_t touched;
+};
+
+static BOOL CALLBACK om_title_bar_apply(HWND window, LPARAM parameter) {
+    struct om_title_bar_args *args = (struct om_title_bar_args *)parameter;
+    DWORD owner = 0;
+    GetWindowThreadProcessId(window, &owner);
+    if (owner != args->pid) return TRUE;
+    if (!IsWindowVisible(window)) return TRUE;
+    // Attribute numbers from dwmapi.h: 20 DWMWA_USE_IMMERSIVE_DARK_MODE
+    // (Windows 10 20H1+), 35 DWMWA_CAPTION_COLOR and 36 DWMWA_TEXT_COLOR
+    // (Windows 11). Older systems return an error for the ones they lack,
+    // which is fine: the bar then stays as Windows drew it.
+    args->set(window, 20, &args->dark, sizeof(args->dark));
+    if (args->caption != 0xFFFFFFFF) args->set(window, 35, &args->caption, sizeof(args->caption));
+    if (args->text != 0xFFFFFFFF) args->set(window, 36, &args->text, sizeof(args->text));
+    args->touched += 1;
+    return TRUE;
+}
+
+int32_t om_apply_title_bar_theme(int32_t dark, uint32_t caption, uint32_t text) {
+    HMODULE dwm = LoadLibraryW(L"dwmapi.dll");
+    if (!dwm) return -1;
+    dwm_set_attr_fn set = (dwm_set_attr_fn)(void *)GetProcAddress(dwm, "DwmSetWindowAttribute");
+    int32_t touched = -1;
+    if (set) {
+        struct om_title_bar_args args = { set, dark ? TRUE : FALSE, caption, text,
+                                          GetCurrentProcessId(), 0 };
+        EnumWindows(om_title_bar_apply, (LPARAM)&args);
+        touched = args.touched;
+    }
+    FreeLibrary(dwm);
+    return touched;
+}
+
+int32_t om_apps_use_dark_theme(void) {
+    DWORD value = 1;
+    DWORD size = sizeof(value);
+    LSTATUS status = RegGetValueW(HKEY_CURRENT_USER,
+                                  L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                                  L"AppsUseLightTheme", RRF_RT_REG_DWORD, NULL, &value, &size);
+    if (status != ERROR_SUCCESS) return -1;
+    return value == 0 ? 1 : 0;
+}
+
 int32_t om_set_app_user_model_id(const uint16_t *id) {
     typedef HRESULT(WINAPI * set_id_fn)(PCWSTR);
     HMODULE shell = LoadLibraryW(L"shell32.dll");

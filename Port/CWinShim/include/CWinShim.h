@@ -45,4 +45,16 @@ int32_t om_verify_authenticode(const uint16_t *path, uint16_t *subject, int32_t 
 // say the same thing before it shows a window. Returns 0 on success.
 int32_t om_set_app_user_model_id(const uint16_t *id);
 
+// Paints the title bars of this process's top-level windows to match the app.
+// WinUI themes everything inside the window and nothing outside it, so a dark
+// app sat under a white caption bar. `dark` chooses the immersive dark caption;
+// `caption`, `text` are 0x00BBGGRR colours for the bar and its title, or
+// 0xFFFFFFFF to leave Windows' defaults. Returns how many windows were
+// touched. Safe to call again: it re-applies to any window that has appeared.
+int32_t om_apply_title_bar_theme(int32_t dark, uint32_t caption, uint32_t text);
+
+// Whether Windows itself is in dark mode for applications, from
+// AppsUseLightTheme in the user's registry. 1 dark, 0 light, -1 unknown.
+int32_t om_apps_use_dark_theme(void);
+
 #endif
