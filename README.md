@@ -7,7 +7,7 @@ and English transcription with whisper.cpp, speaker diarization, AI summaries,
 and the MCP server for your AI tools. Nothing leaves your machine unless you
 point it at a server of your own.
 
-Website: [OpenMila.nx1xlab.dev](https://openmila.nx1xlab.dev)
+Website: [openmila.nx1xlab.dev](https://openmila.nx1xlab.dev)
 
 > OpenMila is an independent community port of Mila for Linux and Windows.
 > It is not affiliated with or endorsed by Island Technology, Inc.
