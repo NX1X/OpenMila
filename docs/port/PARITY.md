@@ -68,7 +68,7 @@ of it on a Windows desktop yet.
 
 | # | Feature | Linux | Windows |
 |---|---|---|---|
-| 33 | Speaker diarization with pyannote, bundled Python runtime, torch on first enable | done - `diarization/build-bundle-linux.sh`, proven by `openmila-selftest diarize` (torch 2.2.2 installed at runtime, turns returned) | written - `build-bundle-windows.ps1` has never been run |
+| 33 | Speaker diarization with pyannote, bundled Python runtime, torch on first enable | done - `diarization/build-bundle-linux.sh`, proven by `openmila-selftest diarize` (torch 2.2.2 installed at runtime, turns returned) | written - `build-bundle-windows.ps1` builds the runtime in CI (run 35546341637, the first time it has ever been run). Nothing has loaded that runtime or diarized with it |
 | 34 | Live speaker labels during recording | done - upstream `LiveSpeakerDiarizer` | written |
 | 35 | A colour per speaker | done - port theme palette | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
 | 36 | Speaker directory: name, rename, merge, un-name, naming mid-recording | done | written - the app builds on Windows with the WinUI backend (CI packages a zip); nothing has run it |
