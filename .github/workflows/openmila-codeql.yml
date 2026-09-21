@@ -1,0 +1,79 @@
+# Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
+#
+# Code scanning for the port. Upstream's codeql.yml analyses the macOS app's
+# Swift on a macOS runner, which says nothing about this port's own code and
+# is path-filtered off for port changes. CodeQL analyses Swift on macOS only,
+# so the port's Swift is out of its reach; what it can read here, on a free
+# Linux runner, is everything else the port wrote: the C and C++ shims, the
+# Python and shell-adjacent scripts, and the workflows themselves. Results go
+# to the repository's Security tab, which a public repository has for free.
+name: OpenMila CodeQL
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Port/**"
+      - "scripts/**"
+      - "packaging/**"
+      - "ci/**"
+      - "diarization/**"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "Port/**"
+      - "scripts/**"
+      - "packaging/**"
+      - "ci/**"
+      - "diarization/**"
+      - ".github/workflows/**"
+  schedule:
+    - cron: "41 5 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openmila-codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+          - language: python
+          - language: c-cpp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          languages: ${{ matrix.language }}
+          # No build: the C and C++ here are a few shim files, and building
+          # them means the whole Swift package. CodeQL reads them as they are.
+          build-mode: none
+          config: |
+            paths:
+              - Port
+              - scripts
+              - packaging
+              - ci
+              - diarization
+              - .github/workflows
+            paths-ignore:
+              - Port/CMiniaudio/include/miniaudio.h
+              - "**/.build/**"
+
+      - uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          category: "/language:${{ matrix.language }}"
