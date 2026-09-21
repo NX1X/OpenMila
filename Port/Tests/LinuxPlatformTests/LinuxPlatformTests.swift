@@ -255,4 +255,63 @@ final class PipeWireGraphTests: XCTestCase {
         ])))
     }
 }
+
+/// Where window titles come from on this session. The readers themselves need
+/// a display or an accessibility bus; what is testable is the rule that decides
+/// to ask the second one, which is where the first version of this was wrong.
+final class WaylandTitleSourceTests: XCTestCase {
+    /// Captured before any test edits the environment: the other tests in this
+    /// class set and unset WAYLAND_DISPLAY, so by the time the live test runs
+    /// the process no longer describes the real session.
+    nonisolated(unsafe) static var sessionIsWayland = false
+
+    override class func setUp() {
+        super.setUp()
+        sessionIsWayland = LinuxMeetingSignals.isWaylandSession
+    }
+
+    override func tearDown() {
+        unsetenv("WAYLAND_DISPLAY")
+        unsetenv("XDG_SESSION_TYPE")
+        super.tearDown()
+    }
+
+    func test_a_wayland_display_means_a_wayland_session() {
+        setenv("WAYLAND_DISPLAY", "wayland-0", 1)
+        XCTAssertTrue(LinuxMeetingSignals.isWaylandSession)
+    }
+
+    func test_the_session_type_is_enough_on_its_own() {
+        unsetenv("WAYLAND_DISPLAY")
+        setenv("XDG_SESSION_TYPE", "Wayland", 1)
+        XCTAssertTrue(LinuxMeetingSignals.isWaylandSession, "the check must not be case sensitive")
+    }
+
+    func test_an_x11_session_is_not_a_wayland_one() {
+        unsetenv("WAYLAND_DISPLAY")
+        setenv("XDG_SESSION_TYPE", "x11", 1)
+        XCTAssertFalse(LinuxMeetingSignals.isWaylandSession)
+    }
+
+    /// An empty WAYLAND_DISPLAY is what a stripped environment leaves behind and
+    /// does not mean a Wayland session.
+    func test_an_empty_wayland_display_does_not_count() {
+        setenv("WAYLAND_DISPLAY", "", 1)
+        setenv("XDG_SESSION_TYPE", "x11", 1)
+        XCTAssertFalse(LinuxMeetingSignals.isWaylandSession)
+    }
+
+    /// The reason this class exists: XWayland answers on a Wayland session, so
+    /// "X11 returned something" must NOT stop the accessibility walk. Asserted
+    /// against the real machine, whichever kind it is: on a Wayland session the
+    /// union must be at least as large as X11 alone.
+    func test_the_accessibility_reader_is_not_skipped_when_x11_answers() throws {
+        guard Self.sessionIsWayland else {
+            throw XCTSkip("not a Wayland session")
+        }
+        setenv("WAYLAND_DISPLAY", "wayland-0", 1)
+        XCTAssertGreaterThanOrEqual(LinuxMeetingSignals.windowTitles().count,
+                                    X11WindowTitles.all().count)
+    }
+}
 #endif

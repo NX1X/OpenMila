@@ -158,6 +158,16 @@ case "gpu":
     // running the model on the CPU pretending to be a GPU is slower than the
     // CPU backend itself.
     print("vulkan: \(VulkanAvailability.summary)")
+    if VulkanAvailability.gpus.isEmpty {
+        print("devices: none the port will use")
+    } else {
+        print("devices:")
+        for device in VulkanAvailability.gpus {
+            let mark = device == VulkanAvailability.selectedGPU ? "*" : " "
+            print("  \(mark) [\(device.index)] \(device.description)")
+        }
+        print("pick one in Settings, or set OPENMILA_GPU_NAME to its name")
+    }
     print("whisper will use: \(VulkanAvailability.usesGPU ? "the GPU" : "the CPU")")
     if !VulkanAvailability.usesGPU {
         print("set OPENMILA_DISABLE_GPU=1 to refuse the GPU even when one is present")
@@ -223,7 +233,8 @@ case "windows":
     // Windows has no such restriction, so a browser-tab meeting is visible
     // there whatever the session.
     #if os(Linux)
-    let titles = X11WindowTitles.all()
+    let titles = LinuxMeetingSignals.windowTitles()
+    print(LinuxMeetingSignals.titleSourceDescription)
     #elseif os(Windows)
     let titles = WindowsWindowTitles.all()
     #else

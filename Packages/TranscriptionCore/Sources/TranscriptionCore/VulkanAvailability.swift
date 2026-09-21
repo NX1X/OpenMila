@@ -50,9 +50,37 @@ public enum VulkanAvailability {
         }
     }
 
+    /// One graphics device the port would use.
+    ///
+    /// `index` is what whisper.cpp's `gpu_device` means: the position among
+    /// GPU-type devices, in enumeration order, NOT the position in the full
+    /// Vulkan device list. whisper.cpp counts only devices ggml reports as GPU
+    /// or integrated GPU, and this list is built the same way, so the two agree
+    /// on what "device 1" is.
+    public struct GPU: Equatable, Sendable {
+        public let index: Int
+        public let name: String
+        public let kind: String
+
+        public init(index: Int, name: String, kind: String) {
+            self.index = index
+            self.name = name
+            self.kind = kind
+        }
+
+        public var description: String { "\(kind) (\(name))" }
+    }
+
     /// Probed once: the answer cannot change while the process runs, and the
     /// probe creates and destroys a Vulkan instance, which is not free.
-    public static let device: Device = probe()
+    public static let probed: Probe = probe()
+
+    /// Every usable graphics device, best first is NOT the order - enumeration
+    /// order is, because the index has to match whisper.cpp's.
+    public static var gpus: [GPU] { probed.gpus }
+
+    /// The machine's answer, kept for the callers that only want one line.
+    public static var device: Device { probed.best }
 
     /// The user's decision, which is a different thing from what the machine
     /// has. Vulkan drivers vary in quality, so someone who hits a driver bug
@@ -61,15 +89,82 @@ public enum VulkanAvailability {
     /// the app's settings, read on every model load.
     nonisolated(unsafe) public static var userDisabledGPU = false
 
+    /// Which device the user picked, by name. Names rather than indices,
+    /// because an index moves when a card is added, removed or re-enumerated,
+    /// and silently transcribing on a different card than the one chosen is
+    /// worse than falling back. `nil` means automatic.
+    ///
+    /// `OPENMILA_GPU_NAME` is the same choice made before the process starts,
+    /// for the CLI and for a headless machine with no Settings window. A choice
+    /// made in the app wins over it.
+    public static var preferredGPUName: String? {
+        get { chosenGPUName ?? environmentGPUName }
+        set { chosenGPUName = newValue }
+    }
+
+    nonisolated(unsafe) private static var chosenGPUName: String?
+
+    private static var environmentGPUName: String? {
+        let value = ProcessInfo.processInfo.environment["OPENMILA_GPU_NAME"]
+        return (value?.isEmpty ?? true) ? nil : value
+    }
+
+    /// The device the model will actually be handed to: the user's choice when
+    /// it is still present, the best one otherwise.
+    public static var selectedGPU: GPU? {
+        guard !userDisabledGPU else { return nil }
+        return select(among: gpus, preferring: preferredGPUName)
+    }
+
+    /// Discrete beats integrated beats virtual. A software device is never in
+    /// `gpus`, so it can never be chosen by accident.
+    public static var bestGPU: GPU? { best(among: gpus) }
+
+    /// Pure, so the choice is testable on a machine with no Vulkan at all -
+    /// which is every CI runner the port has.
+    public static func best(among devices: [GPU]) -> GPU? {
+        let rank: [String: Int] = ["discrete GPU": 0, "integrated GPU": 1, "virtual GPU": 2]
+        return devices.min { (rank[$0.kind] ?? 9, $0.index) < (rank[$1.kind] ?? 9, $1.index) }
+    }
+
+    /// The user's pick when it is still there, the best device otherwise. A
+    /// name that has disappeared falls back rather than failing: the card was
+    /// removed or renamed by a driver update, and refusing to transcribe would
+    /// be a worse answer than using the one that is present.
+    public static func select(among devices: [GPU], preferring name: String?) -> GPU? {
+        if let name, let match = devices.first(where: { $0.name == name }) { return match }
+        return best(among: devices)
+    }
+
     /// What whisper.cpp is actually asked for: a real device the user has not
     /// turned off.
-    public static var usesGPU: Bool { !userDisabledGPU && device.isUsableGPU }
+    public static var usesGPU: Bool { selectedGPU != nil }
+
+    /// `whisper_context_params.gpu_device`.
+    public static var gpuDeviceIndex: Int32 { Int32(selectedGPU?.index ?? 0) }
 
     /// One line for Settings, the diagnostic report and the CLI, so all three
     /// say the same thing.
     public static var summary: String {
-        guard userDisabledGPU, device.isUsableGPU else { return device.description }
-        return "\(device.description); turned off in Settings"
+        if userDisabledGPU, device.isUsableGPU {
+            return "\(device.description); turned off in Settings"
+        }
+        guard let selected = selectedGPU else { return device.description }
+        var line = selected.description
+        if gpus.count > 1 {
+            line += "; \(gpus.count) devices found"
+            if preferredGPUName == nil { line += ", chosen automatically" }
+        }
+        if let wanted = preferredGPUName, wanted != selected.name {
+            line += "; \"\(wanted)\" is no longer present"
+        }
+        return line
+    }
+
+    /// What one probe found: every usable device, and the one-line answer.
+    public struct Probe: Sendable {
+        public let gpus: [GPU]
+        public let best: Device
     }
 
     // MARK: The probe
@@ -108,9 +203,18 @@ public enum VulkanAvailability {
     private typealias EnumerateDevices = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<UInt32>?, UnsafeMutableRawPointer?) -> Int32
     private typealias DeviceProperties = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Void
 
-    private static func probe() -> Device {
+    private static func probe() -> Probe {
+        Probe(gpus: found.gpus, best: found.best)
+    }
+
+    /// The probe proper. Split from `probe()` only so every early return can
+    /// say "no devices" once rather than in five places.
+    private static var found: (gpus: [GPU], best: Device) {
+        func empty(_ reason: String) -> (gpus: [GPU], best: Device) {
+            ([], .none(reason: reason))
+        }
         if ProcessInfo.processInfo.environment["OPENMILA_DISABLE_GPU"] == "1" {
-            return .none(reason: "OPENMILA_DISABLE_GPU=1")
+            return empty("OPENMILA_DISABLE_GPU=1")
         }
         // The loader is opened by name at run time, never linked, so a build
         // with the Vulkan backend still runs where Vulkan is absent. The two
@@ -118,7 +222,7 @@ public enum VulkanAvailability {
         #if os(Windows)
         let libraryName = "vulkan-1.dll"
         guard let library = LoadLibraryW(libraryName.withCString(encodedAs: UTF16.self) { $0 }) else {
-            return .none(reason: "\(libraryName) is not installed")
+            return empty("\(libraryName) is not installed")
         }
         defer { FreeLibrary(library) }
         // GetProcAddress hands back FARPROC, which Swift types as a function
@@ -133,7 +237,7 @@ public enum VulkanAvailability {
         #else
         let libraryName = "libvulkan.so.1"
         guard let library = dlopen(libraryName, RTLD_NOW) else {
-            return .none(reason: "\(libraryName) is not installed")
+            return empty("\(libraryName) is not installed")
         }
         defer { dlclose(library) }
         let symbol: (String) -> UnsafeMutableRawPointer? = { dlsym(library, $0) }
@@ -143,7 +247,7 @@ public enum VulkanAvailability {
               let enumerateSymbol = symbol("vkEnumeratePhysicalDevices"),
               let propertiesSymbol = symbol("vkGetPhysicalDeviceProperties"),
               let destroySymbol = symbol("vkDestroyInstance") else {
-            return .none(reason: "the Vulkan loader is missing its entry points")
+            return empty("the Vulkan loader is missing its entry points")
         }
         let createInstance = unsafeBitCast(createSymbol, to: CreateInstance.self)
         let enumerate = unsafeBitCast(enumerateSymbol, to: EnumerateDevices.self)
@@ -163,24 +267,28 @@ public enum VulkanAvailability {
             }
         }
         guard created == 0, let instance else {
-            return .none(reason: "no Vulkan driver answered")
+            return empty("no Vulkan driver answered")
         }
         defer { destroy(instance, nil) }
 
         var count: UInt32 = 0
         guard enumerate(instance, &count, nil) == 0, count > 0 else {
-            return .none(reason: "the driver reports no devices")
+            return empty("the driver reports no devices")
         }
         var handles = [UnsafeMutableRawPointer?](repeating: nil, count: Int(count))
         guard handles.withUnsafeMutableBufferPointer({ buffer in
             enumerate(instance, &count, buffer.baseAddress)
         }) == 0 else {
-            return .none(reason: "the device list could not be read")
+            return empty("the device list could not be read")
         }
 
         // VkPhysicalDeviceProperties: apiVersion, driverVersion, vendorID and
         // deviceID are four uint32s, then deviceType, then a 256-byte name.
-        var best: Device = .none(reason: "the device list was empty")
+        // Every device, not the first acceptable one: a laptop with an Intel
+        // iGPU enumerated before an NVIDIA card would otherwise get the iGPU,
+        // and a user with two cards could never pick the other.
+        var gpus: [GPU] = []
+        var software: String?
         for handle in handles.compactMap({ $0 }) {
             var storage = [UInt8](repeating: 0, count: 1024)
             storage.withUnsafeMutableBytes { raw in
@@ -188,15 +296,29 @@ public enum VulkanAvailability {
             }
             let type = storage.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 16, as: UInt32.self) }
             let name = String(decoding: storage[20..<(20 + 256)].prefix { $0 != 0 }, as: UTF8.self)
+            let kind: String?
             switch type {
-            case 1: return .gpu(name: name, kind: "integrated GPU")
-            case 2: return .gpu(name: name, kind: "discrete GPU")
-            case 3: return .gpu(name: name, kind: "virtual GPU")
-            case 4: best = .software(name: name)   // keep looking for a real one
-            default: if case .none = best { best = .software(name: name) }
+            case 1: kind = "integrated GPU"
+            case 2: kind = "discrete GPU"
+            case 3: kind = "virtual GPU"
+            default: kind = nil            // 4 is CPU, 0 is "other"
+            }
+            if let kind {
+                // The index counts GPU-type devices only, which is what
+                // whisper.cpp's gpu_device counts.
+                gpus.append(GPU(index: gpus.count, name: name, kind: kind))
+            } else if software == nil {
+                software = name
             }
         }
-        return best
+        let rank: [String: Int] = ["discrete GPU": 0, "integrated GPU": 1, "virtual GPU": 2]
+        if let best = gpus.min(by: { (rank[$0.kind] ?? 9, $0.index) < (rank[$1.kind] ?? 9, $1.index) }) {
+            return (gpus, .gpu(name: best.name, kind: best.kind))
+        }
+        if let software {
+            return ([], .software(name: software))
+        }
+        return empty("the driver reports no graphics device")
     }
 }
 #endif

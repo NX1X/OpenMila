@@ -10,13 +10,21 @@ import PlatformKit
 
 /// Detects running meeting apps.
 ///
-/// Two signals, because one is not enough. A native application (Zoom, Teams)
-/// has a process to find, which works on every session. A meeting in a browser
-/// tab (Google Meet) has no process of its own, and upstream finds it in the
-/// window title: that is possible on X11 and XWayland, and impossible on a
-/// pure Wayland session, where a client cannot see another client's windows by
-/// design. So Meet is detected where the session allows it, and the port says
-/// plainly that it is not detected where it does not.
+/// Three signals, because no one of them covers every session. A native
+/// application (Zoom, Teams) has a process to find, which works everywhere. A
+/// meeting in a browser tab (Google Meet, Proton Meet) has no process of its
+/// own, so it has to be found by window title, and where titles come from
+/// depends on the session:
+///
+/// - **X11 or XWayland**: `XQueryTree`, the way upstream does it.
+/// - **Pure Wayland**: the display protocol refuses, by design, so titles come
+///   from the accessibility bus instead (`ATSPIWindowTitles`). Firefox and
+///   Chromium both publish their windows there. It needs the desktop's
+///   accessibility support switched on, and says so when it is not.
+///
+/// Both title readers are tried, in that order, and the first that names
+/// anything wins. Neither is required: with neither, native applications are
+/// still detected.
 public struct LinuxMeetingSignals: MeetingSignals {
     /// Lowercased `comm` names to the upstream `MeetingApp` key.
     static let knownProcesses: [(comm: String, appName: String, appKey: String)] = [
@@ -30,9 +38,78 @@ public struct LinuxMeetingSignals: MeetingSignals {
     private let titles: () -> [String]
 
     public init(procRoot: URL = URL(fileURLWithPath: "/proc"),
-                titles: @escaping () -> [String] = X11WindowTitles.all) {
+                titles: @escaping () -> [String] = LinuxMeetingSignals.windowTitles) {
         self.procRoot = procRoot
         self.titles = titles
+    }
+
+    /// Both readers, unioned, because neither is a superset of the other.
+    ///
+    /// The tempting rule - "X11 first, accessibility bus only when X11 is
+    /// empty" - is wrong on exactly the session this exists for. A GNOME
+    /// Wayland session runs XWayland, so `XQueryTree` answers with a handful of
+    /// window titles (GNOME Shell, mutter's frames, whatever ibus owns) while
+    /// showing nothing of a Wayland-native Firefox. Non-empty is therefore not
+    /// the same as complete, and a first-wins rule would skip the accessibility
+    /// bus forever on the session that needs it.
+    public static func windowTitles() -> [String] {
+        var titles = X11WindowTitles.all()
+        guard isWaylandSession else { return titles }
+        titles.append(contentsOf: accessibilityTitles())
+        return titles
+    }
+
+    static var isWaylandSession: Bool {
+        let environment = ProcessInfo.processInfo.environment
+        if let display = environment["WAYLAND_DISPLAY"], !display.isEmpty { return true }
+        return environment["XDG_SESSION_TYPE"]?.lowercased() == "wayland"
+    }
+
+    /// The accessibility walk is tens of blocking D-Bus calls, and meeting
+    /// detection polls, so the answer is cached briefly. A meeting that starts
+    /// during the cache window is noticed on the next poll, which is the same
+    /// granularity the poll itself has.
+    static let accessibilityCacheSeconds: TimeInterval = 5
+    nonisolated(unsafe) private static var cachedAccessibilityTitles: (at: Date, titles: [String])?
+    private static let cacheLock = NSLock()
+
+    static func accessibilityTitles() -> [String] {
+        cacheLock.lock()
+        if let cached = cachedAccessibilityTitles,
+           Date().timeIntervalSince(cached.at) < accessibilityCacheSeconds {
+            cacheLock.unlock()
+            return cached.titles
+        }
+        cacheLock.unlock()
+        let titles = ATSPIWindowTitles.all()
+        cacheLock.lock()
+        cachedAccessibilityTitles = (at: Date(), titles: titles)
+        cacheLock.unlock()
+        return titles
+    }
+
+    /// Where titles can be read on this session, for Settings and the CLI to
+    /// explain a gap rather than leave the user guessing.
+    public static var titleSourceDescription: String {
+        let x11 = X11WindowTitles.all().count
+        guard isWaylandSession else {
+            return x11 > 0
+                ? "window titles come from X11 (\(x11) visible)"
+                : "no window titles: no X display answered"
+        }
+        let fromX11 = x11 > 0 ? "X11 or XWayland shows \(x11)" : "X11 shows none"
+        switch ATSPIWindowTitles.status {
+        case .ready:
+            return "\(fromX11); the accessibility bus shows \(accessibilityTitles().count)"
+        case .accessibilityDisabled:
+            return """
+                \(fromX11); a Wayland-native window is invisible to it, and the accessibility bus \
+                is off, so a meeting in a browser tab cannot be seen. Turn it on with: \
+                gsettings set org.gnome.desktop.interface toolkit-accessibility true
+                """
+        case .unavailable(let reason):
+            return "\(fromX11); no accessibility bus either (\(reason))"
+        }
     }
 
     public func activeMeetings() async -> [DetectedMeeting] {

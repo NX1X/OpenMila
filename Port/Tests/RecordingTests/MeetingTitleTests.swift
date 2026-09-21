@@ -1,5 +1,6 @@
 // Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
 
+import TranscriptionCore
 import PlatformKit
 import XCTest
 
@@ -55,5 +56,48 @@ final class MeetingTitleTests: XCTestCase {
         XCTAssertTrue(MeetingTitles.meetings(inTitles: [
             "Proton Mail", "mail.proton.me - Inbox", "proton drive",
         ]).isEmpty)
+    }
+}
+
+/// Which graphics device the model is handed to. The probe needs a Vulkan
+/// driver, so the choice is a pure function over a device list and this tests
+/// that; `openmila-cli gpu` exercises the probe on a real machine.
+final class GPUSelectionTests: XCTestCase {
+    typealias GPU = VulkanAvailability.GPU
+
+    let laptop = [
+        GPU(index: 0, name: "Intel UHD Graphics 770", kind: "integrated GPU"),
+        GPU(index: 1, name: "NVIDIA GeForce RTX 4060 Laptop GPU", kind: "discrete GPU"),
+    ]
+
+    /// Enumeration order puts the iGPU first on most laptops, and picking the
+    /// first device would quietly use it instead of the card.
+    func test_a_discrete_card_wins_over_an_integrated_one() {
+        XCTAssertEqual(VulkanAvailability.best(among: laptop)?.index, 1)
+    }
+
+    func test_the_users_pick_is_honoured() {
+        let chosen = VulkanAvailability.select(among: laptop, preferring: "Intel UHD Graphics 770")
+        XCTAssertEqual(chosen?.index, 0)
+    }
+
+    /// A card that is gone falls back instead of refusing to transcribe.
+    func test_a_missing_pick_falls_back_to_the_best_present_device() {
+        let chosen = VulkanAvailability.select(among: laptop, preferring: "AMD Radeon RX 7900 XTX")
+        XCTAssertEqual(chosen?.index, 1)
+    }
+
+    func test_no_devices_means_no_choice() {
+        XCTAssertNil(VulkanAvailability.select(among: [], preferring: "anything"))
+    }
+
+    /// Two discrete cards: the earlier one wins, so the answer is stable rather
+    /// than dependent on dictionary order.
+    func test_two_equal_devices_resolve_by_enumeration_order() {
+        let pair = [
+            GPU(index: 0, name: "NVIDIA A", kind: "discrete GPU"),
+            GPU(index: 1, name: "NVIDIA B", kind: "discrete GPU"),
+        ]
+        XCTAssertEqual(VulkanAvailability.best(among: pair)?.name, "NVIDIA A")
     }
 }

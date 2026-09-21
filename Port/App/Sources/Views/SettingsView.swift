@@ -5,6 +5,9 @@
 
 import Dictation
 import Foundation
+#if os(Linux)
+import LinuxPlatform
+#endif
 import PlatformKit
 import SwiftCrossUI
 import Updater
@@ -27,6 +30,7 @@ struct SettingsView: View {
     @State var watchedPath = ""
     @State var watchedError: String?
     @State var gpuEnabled = true
+    @State var gpuDevice = GPUSettings.automaticLabel
     @State var hotkeys: Observed<HotkeySettings>
     @State var chordEN = ""
     @State var chordHE = ""
@@ -99,6 +103,7 @@ struct SettingsView: View {
             chordEN = model.hotkeys.chord(for: .english).displayName
             chordHE = model.hotkeys.chord(for: .hebrew).displayName
             gpuEnabled = model.gpu.isEnabled
+            gpuDevice = model.gpu.selectedLabel
         }
     }
 
@@ -129,8 +134,12 @@ struct SettingsView: View {
             Text("Meetings").font(.headline)
             Toggle("Offer to record when a meeting app starts", isOn: Binding(
                 get: { meetings.object.enabled }, set: { meetings.object.enabled = $0 }))
-            Text("Zoom and Microsoft Teams are found by their process, on any session. A meeting in a browser tab - Google Meet, Proton Meet - is found by the window title, which an X11 or XWayland session exposes and a pure Wayland session does not. Windows has no such restriction.")
+            Text("Zoom and Microsoft Teams are found by their process, on any session. A meeting in a browser tab - Google Meet, Proton Meet - is found by the window title.")
                 .font(.caption).foregroundColor(Theme.secondaryText)
+            #if os(Linux)
+            Text(LinuxMeetingSignals.titleSourceDescription)
+                .font(.caption).foregroundColor(Theme.secondaryText)
+            #endif
         }
     }
 
@@ -314,6 +323,14 @@ struct SettingsView: View {
                     set: { gpuEnabled = $0; model.gpu.isEnabled = $0 }))
                 Text("Takes effect the next time a model is loaded. Turn it off if a driver misbehaves; transcription then runs on the processor.")
                     .font(.caption).foregroundColor(Theme.secondaryText)
+                if gpuEnabled, model.gpu.devices.count > 1 {
+                    Text("Which device").font(.callout)
+                    Picker(of: model.gpu.deviceLabels, selection: Binding(
+                        get: { gpuDevice },
+                        set: { if let label = $0 { gpuDevice = label; model.gpu.choose(label: label) } }))
+                    Text("Automatic picks a discrete card over an integrated one. Pick a device by name if you would rather keep the other one free.")
+                        .font(.caption).foregroundColor(Theme.secondaryText)
+                }
             } else {
                 Text("No graphics device the port will use, so transcription runs on the processor. A software Vulkan driver (llvmpipe, lavapipe) is refused on purpose: it is slower than the processor.")
                     .font(.caption).foregroundColor(Theme.secondaryText)

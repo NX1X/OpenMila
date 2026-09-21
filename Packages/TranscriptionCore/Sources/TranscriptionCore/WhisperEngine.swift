@@ -158,6 +158,9 @@ public actor WhisperEngine {
         // software Vulkan implementation is slower than the CPU backend, and
         // no Vulkan at all is the common case. VulkanAvailability decides.
         params.use_gpu = VulkanAvailability.usesGPU
+        // Which one, when the machine has several: whisper.cpp counts
+        // GPU-type devices in enumeration order and so does the probe.
+        params.gpu_device = VulkanAvailability.gpuDeviceIndex
         params.flash_attn = false
         if params.use_gpu {
             whisperNotice("GPU: \(VulkanAvailability.summary)")
