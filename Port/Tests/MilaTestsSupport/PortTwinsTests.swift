@@ -40,6 +40,11 @@ final class WatchedFolderLibraryTests: XCTestCase {
 /// real suggestion: an empty field is how someone ends up watching their whole
 /// home directory, which then treats every folder in it as an import source.
 final class SuggestedWatchedFolderTests: XCTestCase {
+    // XDG_MUSIC_DIR is a freedesktop convention and the reader only consults it
+    // off Windows, so the two tests that drive it are Linux-side. `setenv` is
+    // POSIX and does not exist on Windows at all, which is the other half of
+    // the reason.
+    #if !os(Windows)
     func test_xdg_music_dir_wins_when_it_exists() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("openmila-xdg-\(UUID())", isDirectory: true)
@@ -58,11 +63,12 @@ final class SuggestedWatchedFolderTests: XCTestCase {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         XCTAssertEqual(VoiceMemosLibrary.xdgMusicDirectory?.path, home + "/Musik")
     }
+    #endif
 
-    /// Whatever the machine looks like, the suggestion is never the home
-    /// directory itself.
+    /// Whatever the machine looks like, and on either system, the suggestion is
+    /// never the home directory itself. No environment is touched here, so this
+    /// one runs everywhere.
     func test_the_suggestion_is_never_the_home_directory() {
-        unsetenv("XDG_MUSIC_DIR")
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         XCTAssertNotEqual(VoiceMemosLibrary.defaultRecordingsDirectory.path, home)
     }
