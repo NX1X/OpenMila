@@ -1,5 +1,13 @@
 # OpenMila
 
+[![Linux](https://github.com/NX1X/OpenMila/actions/workflows/openmila-linux.yml/badge.svg)](https://github.com/NX1X/OpenMila/actions/workflows/openmila-linux.yml)
+[![Windows](https://github.com/NX1X/OpenMila/actions/workflows/openmila-windows.yml/badge.svg)](https://github.com/NX1X/OpenMila/actions/workflows/openmila-windows.yml)
+[![CodeQL](https://github.com/NX1X/OpenMila/actions/workflows/codeql.yml/badge.svg)](https://github.com/NX1X/OpenMila/actions/workflows/codeql.yml)
+[![Scorecard](https://api.scorecard.dev/projects/github.com/NX1X/OpenMila/badge)](https://scorecard.dev/viewer/?uri=github.com/NX1X/OpenMila)
+[![Release](https://img.shields.io/github/v/release/NX1X/OpenMila?include_prereleases&sort=semver)](https://github.com/NX1X/OpenMila/releases)
+[![Downloads](https://img.shields.io/github/downloads/NX1X/OpenMila/total)](https://github.com/NX1X/OpenMila/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 OpenMila brings [Mila](https://github.com/island-io/mila), the local
 transcription app for macOS, to **Linux desktop** and **Windows**. Same
 features, same models, same on-device privacy: recording, dictation, Hebrew

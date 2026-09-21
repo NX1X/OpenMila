@@ -42,6 +42,7 @@ final class AppModel {
     let platform: PlatformServices
     let store: RecordingStore
     let storageSettings: RecordingStorageSettings
+    let gpu: GPUSettings
     let modelManager: ModelManager
     let languageSettings: RecordingLanguageSettings
     let diarizationSettings: DiarizationSettings
@@ -80,6 +81,9 @@ final class AppModel {
         try? FileManager.default.createDirectory(at: platform.paths.dataDirectory, withIntermediateDirectories: true)
 
         storageSettings = RecordingStorageSettings()
+        // Before anything loads a model: the engine reads the flag on every
+        // load, and the first load can happen as soon as the window is up.
+        gpu = GPUSettings()
         store = RecordingStore(rootDirectory: platform.paths.dataDirectory,
                                customRecordingsDirectory: storageSettings.customDirectory)
         modelManager = ModelManager(modelsDirectory: platform.paths.dataDirectory.appendingPathComponent("Models", isDirectory: true))

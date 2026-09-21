@@ -25,6 +25,8 @@ struct SettingsView: View {
     @State var meetings: Observed<MeetingDetectionSettings>
     @State var watched: Observed<VoiceMemosSettings>
     @State var watchedPath = ""
+    @State var watchedError: String?
+    @State var gpuEnabled = true
     @State var hotkeys: Observed<HotkeySettings>
     @State var chordEN = ""
     @State var chordHE = ""
@@ -89,9 +91,14 @@ struct SettingsView: View {
             devices = (try? model.platform.microphone.inputDevices()) ?? []
             if let id = model.audioInput.preferredUID, let d = devices.first(where: { $0.id == id }) { deviceName = d.name }
             storageGB = model.storageSettings.limitGigabytes
-            watchedPath = model.watchedFolders.grantedFolderURL?.path ?? ""
+            // Never leave this empty: a blank field invites a path typed by
+            // hand, and the shortest thing to type is the home directory,
+            // which would make every folder in it import material.
+            watchedPath = model.watchedFolders.grantedFolderURL?.path
+                ?? VoiceMemosSettings.suggestedFolder.path
             chordEN = model.hotkeys.chord(for: .english).displayName
             chordHE = model.hotkeys.chord(for: .hebrew).displayName
+            gpuEnabled = model.gpu.isEnabled
         }
     }
 
@@ -122,7 +129,7 @@ struct SettingsView: View {
             Text("Meetings").font(.headline)
             Toggle("Offer to record when a meeting app starts", isOn: Binding(
                 get: { meetings.object.enabled }, set: { meetings.object.enabled = $0 }))
-            Text("Detected by running process on Linux: Zoom and Microsoft Teams. Google Meet in a browser is not detectable on Wayland.")
+            Text("Zoom and Microsoft Teams are found by their process, on any session. A meeting in a browser tab - Google Meet, Proton Meet - is found by the window title, which an X11 or XWayland session exposes and a pure Wayland session does not. Windows has no such restriction.")
                 .font(.caption).foregroundColor(Theme.secondaryText)
         }
     }
@@ -136,9 +143,12 @@ struct SettingsView: View {
                 get: { watched.object.isEnabled }, set: { watched.object.isEnabled = $0 }))
             HStack {
                 TextField("Folder path", text: $watchedPath)
-                Button("Use folder") {
-                    _ = model.watchedFolders.grantFolder(URL(fileURLWithPath: watchedPath))
-                }
+                Button("Use folder") { useWatchedFolder() }
+            }
+            Text("Suggested: \(VoiceMemosSettings.suggestedFolder.path). OpenMila creates it if it does not exist. Pick one folder for recordings, not your home directory - every folder inside the one you choose becomes an import source.")
+                .font(.caption).foregroundColor(Theme.secondaryText)
+            if let error = watchedError {
+                Text(error).font(.caption).foregroundColor(Theme.danger)
             }
             if let granted = watched.object.grantedFolderURL {
                 Text("Watching: \(granted.path)").font(.caption).foregroundColor(Theme.success)
@@ -154,6 +164,29 @@ struct SettingsView: View {
                     .font(.caption).foregroundColor(Theme.secondaryText)
             }
         }
+    }
+
+    /// Grants the typed folder, creating it first when it does not exist yet -
+    /// the suggested path usually does not, and a button that silently fails
+    /// on a folder OpenMila offered would be worse than one that makes it.
+    func useWatchedFolder() {
+        let path = watchedPath.trimmingCharacters(in: .whitespaces)
+        guard !path.isEmpty else { watchedError = "Type a folder path first."; return }
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+        var isDirectory: ObjCBool = false
+        if !FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+            do {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            } catch {
+                watchedError = "Could not create \(url.path): \(error.localizedDescription)"
+                return
+            }
+        } else if !isDirectory.boolValue {
+            watchedError = "\(url.path) is a file, not a folder."
+            return
+        }
+        watchedPath = url.path
+        watchedError = model.watchedFolders.grantFolder(url) ? nil : "Could not use \(url.path)."
     }
 
     var general: some View {
@@ -270,6 +303,20 @@ struct SettingsView: View {
                     }
                     if let err = models.object.lastDownloadErrors[m.name] { Text(err).font(.caption).foregroundColor(Theme.danger) }
                 }
+            }
+            Divider()
+            Text("Hardware").font(.headline)
+            Text("This machine: \(model.gpu.summary)")
+                .font(.caption).foregroundColor(Theme.secondaryText)
+            if model.gpu.hasUsableDevice || !gpuEnabled {
+                Toggle("Use the graphics card when one is usable", isOn: Binding(
+                    get: { gpuEnabled },
+                    set: { gpuEnabled = $0; model.gpu.isEnabled = $0 }))
+                Text("Takes effect the next time a model is loaded. Turn it off if a driver misbehaves; transcription then runs on the processor.")
+                    .font(.caption).foregroundColor(Theme.secondaryText)
+            } else {
+                Text("No graphics device the port will use, so transcription runs on the processor. A software Vulkan driver (llvmpipe, lavapipe) is refused on purpose: it is slower than the processor.")
+                    .font(.caption).foregroundColor(Theme.secondaryText)
             }
             Divider()
             Text("Backend").font(.headline)

@@ -36,6 +36,38 @@ final class WatchedFolderLibraryTests: XCTestCase {
     }
 }
 
+/// The folder Settings offers when the user has chosen nothing. It has to be a
+/// real suggestion: an empty field is how someone ends up watching their whole
+/// home directory, which then treats every folder in it as an import source.
+final class SuggestedWatchedFolderTests: XCTestCase {
+    func test_xdg_music_dir_wins_when_it_exists() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("openmila-xdg-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        setenv("XDG_MUSIC_DIR", root.path, 1)
+        defer { unsetenv("XDG_MUSIC_DIR") }
+        XCTAssertEqual(VoiceMemosLibrary.defaultRecordingsDirectory.path,
+                       root.appendingPathComponent("Recordings").path)
+    }
+
+    /// `user-dirs.dirs` writes the path with $HOME and quotes around it.
+    func test_a_home_relative_xdg_value_is_expanded() {
+        setenv("XDG_MUSIC_DIR", "$HOME/Musik", 1)
+        defer { unsetenv("XDG_MUSIC_DIR") }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        XCTAssertEqual(VoiceMemosLibrary.xdgMusicDirectory?.path, home + "/Musik")
+    }
+
+    /// Whatever the machine looks like, the suggestion is never the home
+    /// directory itself.
+    func test_the_suggestion_is_never_the_home_directory() {
+        unsetenv("XDG_MUSIC_DIR")
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        XCTAssertNotEqual(VoiceMemosLibrary.defaultRecordingsDirectory.path, home)
+    }
+}
+
 final class DirectoryWatcherTwinTests: XCTestCase {
     func test_reports_a_new_file() throws {
         let root = TestSupport.makeTempRoot(label: "watcher")

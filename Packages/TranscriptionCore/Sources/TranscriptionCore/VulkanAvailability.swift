@@ -54,6 +54,24 @@ public enum VulkanAvailability {
     /// probe creates and destroys a Vulkan instance, which is not free.
     public static let device: Device = probe()
 
+    /// The user's decision, which is a different thing from what the machine
+    /// has. Vulkan drivers vary in quality, so someone who hits a driver bug
+    /// needs a switch rather than a reinstall; `OPENMILA_DISABLE_GPU=1` is the
+    /// same decision taken before the process starts. Set once at launch from
+    /// the app's settings, read on every model load.
+    nonisolated(unsafe) public static var userDisabledGPU = false
+
+    /// What whisper.cpp is actually asked for: a real device the user has not
+    /// turned off.
+    public static var usesGPU: Bool { !userDisabledGPU && device.isUsableGPU }
+
+    /// One line for Settings, the diagnostic report and the CLI, so all three
+    /// say the same thing.
+    public static var summary: String {
+        guard userDisabledGPU, device.isUsableGPU else { return device.description }
+        return "\(device.description); turned off in Settings"
+    }
+
     // MARK: The probe
 
     private static let instanceCreateInfoType: UInt32 = 1   // VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO

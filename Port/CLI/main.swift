@@ -157,9 +157,9 @@ case "gpu":
     // A software Vulkan device (llvmpipe, lavapipe) is reported but refused:
     // running the model on the CPU pretending to be a GPU is slower than the
     // CPU backend itself.
-    print("vulkan: \(VulkanAvailability.device.description)")
-    print("whisper will use: \(VulkanAvailability.device.isUsableGPU ? "the GPU" : "the CPU")")
-    if !VulkanAvailability.device.isUsableGPU {
+    print("vulkan: \(VulkanAvailability.summary)")
+    print("whisper will use: \(VulkanAvailability.usesGPU ? "the GPU" : "the CPU")")
+    if !VulkanAvailability.usesGPU {
         print("set OPENMILA_DISABLE_GPU=1 to refuse the GPU even when one is present")
     }
 
