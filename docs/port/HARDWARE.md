@@ -36,6 +36,29 @@ asks the machine what it has before using it:
 `openmila-cli gpu` prints the probe's answer, Settings shows it under Models,
 and the diagnostic report carries it. The switch is there for a bad driver.
 
+### Which cards count
+
+One Vulkan driver per vendor is all this needs, and every current vendor ships
+one on both systems:
+
+| Vendor | Linux driver | Windows driver | Counted as |
+|---|---|---|---|
+| NVIDIA | the proprietary driver, or NVK on Mesa | the vendor driver | discrete GPU |
+| AMD | RADV (Mesa), or AMDVLK | the vendor driver | discrete GPU, or integrated on an APU |
+| Intel | ANV (Mesa), for Arc cards and for the iGPU in any recent Core chip | the vendor driver | discrete GPU for Arc, integrated GPU for an iGPU |
+| Anything virtual | venus, virtio-gpu | a hypervisor's driver | virtual GPU |
+| llvmpipe, lavapipe, SwiftShader | present on almost every Mesa install | - | software, refused |
+
+**An Intel iGPU is used, not skipped.** It is ranked below a discrete card
+only when a machine has both: automatic prefers discrete, then integrated,
+then virtual, and Settings lets you override that by name. On a laptop with
+nothing but Intel graphics, the iGPU is what gets the model.
+
+The refusal is narrow on purpose: it applies only to devices Vulkan reports as
+CPU-type, which are the software rasterisers. Those run the model on the
+processor through a graphics API, which is slower than whisper.cpp's own CPU
+backend, so taking them would make the machine worse rather than better.
+
 **What has not happened: a measurement.** The decision logic is tested and the
 backend is compiled in, but no transcription has been timed on a real GPU on
 either system - the development machine has none, and the Windows machine has

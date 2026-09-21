@@ -5,6 +5,7 @@
 //
 //   openmila-selftest models            download the English model (large-v3-turbo) via ModelManager
 //   openmila-selftest import <dir>      watched-folder import of <dir>, then transcription
+//   openmila-selftest summarize [--provider claude|ollama] [--model name] [--endpoint url]
 //   openmila-selftest summarize         summarise the newest recording with the configured `claude` CLI
 //   openmila-selftest diarize <file>    install torch if needed, then label speakers
 //   openmila-selftest list              show the store
@@ -22,6 +23,12 @@ let args = Array(CommandLine.arguments.dropFirst())
 OpenMilaLog.install(processName: "openmila-selftest", version: "dev", alsoStderr: false)
 
 func say(_ text: String) { print(text); fflush(stdout) }
+
+/// `--name value` out of the argument list, for the few commands that take one.
+func option(_ name: String, in args: [String]) -> String? {
+    guard let index = args.firstIndex(of: name), index + 1 < args.count else { return nil }
+    return args[index + 1]
+}
 func fail(_ text: String) -> Never { FileHandle.standardError.write(Data((text + "\n").utf8)); exit(1) }
 
 @MainActor
@@ -133,11 +140,26 @@ func run() async {
         guard let target = store.recordings.filter({ $0.deletedAt == nil && $0.status == .completed && !$0.fullText.isEmpty })
             .max(by: { $0.createdAt < $1.createdAt }) else { fail("no completed recording to summarise") }
         let llm = LLMSettings(defaults: defaults)
-        llm.tool = .claude
         llm.summaryEnabled = true
+        // --provider ollama exercises the path a privacy-minded user actually
+        // wants: an OpenAI-compatible endpoint on this machine, no key, no
+        // network. Anything else keeps the claude CLI, which is the default
+        // this harness had.
+        let provider = option("--provider", in: args) ?? "claude"
+        let describedProvider: String
+        if provider == "ollama" {
+            llm.tool = .openaiCompatible
+            llm.openAIProvider = .ollamaLocal
+            llm.openAIBaseURL = option("--endpoint", in: args) ?? OpenAIProvider.ollamaLocal.baseURL
+            llm.openAIModelName = option("--model", in: args) ?? "qwen2.5:3b"
+            describedProvider = "Ollama at \(llm.openAIBaseURL), model \(llm.openAIModelName)"
+        } else {
+            llm.tool = .claude
+            describedProvider = "the claude CLI"
+        }
         let live = LiveAISettings(defaults: defaults)
         let summarizer = RecordingSummarizer(store: store, llmSettings: llm, liveAISettings: live)
-        say("summarising \"\(target.title)\" with the claude CLI...")
+        say("summarising \"\(target.title)\" with \(describedProvider)...")
         summarizer.regenerate(target)
         _ = await waitFor("the summary", timeout: 300, poll: 2) { !summarizer.isSummarizing(target.id) && (store.recordings.first { $0.id == target.id }?.summary?.isEmpty == false) }
         let updated = store.recordings.first { $0.id == target.id }
