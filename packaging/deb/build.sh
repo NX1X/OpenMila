@@ -9,9 +9,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERSION="${1:-$(grep -oE 'static let version = "[^"]+"' "$ROOT/Port/App/Sources/AppModel.swift" | sed -E 's/.*"([^"]+)"/\1/')}"
-# Debian versions may not contain "+port" segments with uppercase or spaces;
-# keep the upstream version and replace the port marker with a tilde-free form.
-DEB_VERSION="$(echo "$VERSION" | tr '+' '~' | tr -d ' ')"
+# The version goes through unchanged apart from spaces. It used to turn "+"
+# into "~", which dpkg orders correctly but GitHub does not keep: a release
+# asset named ...2~port.0... is published as ...2.port.0..., so the SHA256SUMS
+# the release ships named a file that did not exist and `sha256sum -c` failed
+# on the one package it covered. dpkg orders "+port.0" before "+port.1" and
+# before the plain upstream version, which is what the scheme needs.
+DEB_VERSION="$(echo "$VERSION" | tr -d ' ')"
 OUT="$ROOT/dist"
 APPDIR="$OUT/OpenMila.AppDir"
 STAGE="$OUT/deb/openmila_${DEB_VERSION}_amd64"
