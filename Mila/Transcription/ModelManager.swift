@@ -325,6 +325,15 @@ final class ModelManager: NSObject, ObservableObject {
     /// it's already installed. Failures are logged but never thrown —
     /// the app still works without CoreML (encoder runs on Metal).
     func downloadCoreML(_ model: WhisperModel) {
+        // Modified by NX1X for OpenMila; see CHANGES.md. The encoder build is
+        // a CoreML artefact: only a Mac can load it, and off macOS the
+        // download cost 1 GB of bandwidth per model and then failed at the
+        // unzip on Windows ("unzip failed: the file does not exist"). Nothing
+        // downstream needs it there: whisper.cpp runs the encoder on Vulkan or
+        // the CPU with the model.
+        #if !canImport(CoreML)
+        return
+        #else
         guard let coreMLURL = model.coreMLURL else { return }
         guard !isCoreMLInstalled(model) else { return }
         guard coreMLDownloads[model.name] == nil else { return }
@@ -334,6 +343,7 @@ final class ModelManager: NSObject, ObservableObject {
         coreMLObservers[task.taskIdentifier] = model
         coreMLTasks[model.name] = task
         task.resume()
+        #endif
     }
 
     /// Best-effort: kick off auto-downloads for any missing `-encoder.mlmodelc`
