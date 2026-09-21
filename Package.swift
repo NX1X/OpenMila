@@ -55,7 +55,7 @@ let package = Package(
         // Exact pins. Bumps are deliberate, one PR each, after a 14-day cooldown.
         .package(url: "https://github.com/OpenCombine/OpenCombine.git", exact: "0.14.0"),
         .package(url: "https://github.com/apple/swift-log.git", exact: "1.15.0"),
-        .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.2"),
+        .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.0.0"),
         // The MCP helper's SDK, pinned exactly as upstream's project.yml pins it.
     ],
     targets: [
