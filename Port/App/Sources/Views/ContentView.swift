@@ -70,26 +70,47 @@ struct ContentView: View {
         }
     }
 
-    var body: some View {
-        NavigationSplitView {
-            SidebarView(store: store, section: $section, showSettings: $showSettings, ui: ui)
-                .frame(minWidth: Theme.sidebarMinWidth)
-        } content: {
-            if section == .home {
+    /// Two layouts, not one with an empty slot. `NavigationSplitView` is two
+    /// nested split panes, and on WinUI a pane is fixed at its minimum width,
+    /// so a three-column layout whose detail is empty (Home) drew the page in
+    /// a narrow middle column and left the wide pane blank: "a third of the
+    /// window and a black box", in the first hands-on report. GTK lets the
+    /// user drag the divider, which is why Linux never showed it. Home is a
+    /// page, so it takes the wide slot; the recordings sections are a list
+    /// beside a detail, which is what the three columns are for.
+    @ViewBuilder var split: some View {
+        if section == .home {
+            NavigationSplitView {
+                sidebar
+            } detail: {
                 HomeView(model: model, transcription: transcription)
-            } else {
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        } else {
+            NavigationSplitView {
+                sidebar
+            } content: {
                 HistoryListView(model: model, recordings: visibleRecordings, transcription: transcription,
                                 selection: $selectedRecording, title: section?.title ?? "")
-            }
-        } detail: {
-            if let id = selectedRecording, let recording = store.object.recordings.first(where: { $0.id == id }) {
-                RecordingDetailView(model: model, store: store, recording: recording)
-            } else if section != .home {
-                Text("Select a recording").foregroundColor(Theme.secondaryText).padding()
-            } else {
-                EmptyView()
+                    .frame(minWidth: Theme.listMinWidth)
+            } detail: {
+                if let id = selectedRecording, let recording = store.object.recordings.first(where: { $0.id == id }) {
+                    RecordingDetailView(model: model, store: store, recording: recording)
+                } else {
+                    Text("Select a recording").foregroundColor(Theme.secondaryText).padding()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
+    }
+
+    var sidebar: some View {
+        SidebarView(store: store, section: $section, showSettings: $showSettings, ui: ui)
+            .frame(minWidth: Theme.sidebarMinWidth)
+    }
+
+    var body: some View {
+        split
         // The window's minimum size comes from its content, so without this the
         // user can drag the window down to a width where a label wraps to one
         // word - or one character - per line, which is what the download
@@ -218,8 +239,10 @@ struct SidebarView: View {
             if !trashNotice.isEmpty { Text(trashNotice).font(.caption).padding([.leading, .trailing]) }
             Divider()
             HStack {
-                Button("Settings") { showSettings = true }
-                Button("About") { ui.object.showAbout = true }
+                // Natural width: in a narrow sidebar the row's space was split
+                // evenly and the labels wrapped to "Setting / s".
+                Button("Settings") { showSettings = true }.fixedSize(horizontal: true, vertical: false)
+                Button("About") { ui.object.showAbout = true }.fixedSize(horizontal: true, vertical: false)
                 Spacer()
                 Text(AppIdentity.version).font(.caption2).foregroundColor(Theme.secondaryText)
             }.padding()

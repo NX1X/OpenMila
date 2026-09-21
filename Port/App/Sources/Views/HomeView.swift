@@ -110,6 +110,7 @@ struct HomeView: View {
                 Text("Dictate").font(.headline)
                 ForEach(DictationLanguage.allCases, id: \.self) { lang in
                     Button(dictationLabel(lang)) { Task { await model.dictation.toggle(lang) } }
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 Text(dictationStatus).font(.caption).foregroundColor(Theme.secondaryText)
             }

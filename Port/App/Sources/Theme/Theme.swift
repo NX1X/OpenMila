@@ -36,6 +36,9 @@ enum Theme {
     static let windowsCaptionDark: UInt32 = 0x001E1E1E
     static let windowsCaptionLight: UInt32 = 0x00FAFAFA
 
+    /// The recordings list beside its detail: wide enough for a title and a
+    /// date on one line.
+    static let listMinWidth = 340
     static let windowMinWidth = 1000
     static let windowMinHeight = 620
 }
