@@ -11,6 +11,11 @@ private final class TitleBox {
     var titles: [String] = []
 }
 
+/// File scope, not a static member: naming a static from inside the callback
+/// captures the enclosing metatype, and a C function pointer cannot be formed
+/// from a closure that captures anything at all.
+private let windowTitleLimit = 4096
+
 /// Reads the captions of the top-level windows on this desktop.
 ///
 /// The Windows twin of `X11WindowTitles`, and the reason the port's meeting
@@ -25,7 +30,7 @@ public enum WindowsWindowTitles {
     /// Cap matching the X11 reader: a desktop has tens of windows, and a
     /// thousands-long walk means something is wrong, not that there is more to
     /// read.
-    static let limit = 4096
+    static var limit: Int { windowTitleLimit }
 
     /// Every visible top-level window's caption, empty ones dropped.
     public static func all() -> [String] {
@@ -39,7 +44,7 @@ public enum WindowsWindowTitles {
             else { return true }
             let box = Unmanaged<TitleBox>.fromOpaque(raw).takeUnretainedValue()
             // false stops the enumeration, which is what the cap wants.
-            guard box.titles.count < limit else { return false }
+            guard box.titles.count < windowTitleLimit else { return false }
             // WindowsBool is its own type, not Bool: compare rather than
             // assume a conversion the overlay does not offer.
             guard IsWindowVisible(window) != false else { return true }
