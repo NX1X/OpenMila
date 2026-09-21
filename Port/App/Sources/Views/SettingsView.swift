@@ -6,6 +6,7 @@
 import Dictation
 import Foundation
 import LocalAI
+import OpenMilaLogging
 #if os(Linux)
 import LinuxPlatform
 #endif
@@ -13,6 +14,8 @@ import PlatformKit
 import SwiftCrossUI
 import Updater
 @testable import Mila
+
+private let localAILog = Logger(subsystem: "io.github.nx1x.openmila", category: "LocalAI")
 
 struct SettingsView: View {
     let model: AppModel
@@ -450,7 +453,10 @@ struct SettingsView: View {
         localAIStatus = "starting"
         let managed = model.localAI
         let settings = model.llmSettings
+        // Every stage to the log as well as the status line, so a report can
+        // say where a setup stopped on a machine nobody else can see.
         managed.onStage = { stage in
+            localAILog.notice("local AI: \(stage.description, privacy: .public)")
             Task { @MainActor in localAIStatus = stage.description }
         }
         Task { @MainActor in
@@ -490,8 +496,10 @@ struct SettingsView: View {
                     openAIAPIKey: settings.tool == .openaiCompatible ? settings.openAIAPIKey : nil)
                 let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
                 aiProviderStatus = text.isEmpty ? "answered, but with nothing" : "works: \(text.prefix(40))"
+                localAILog.notice("AI provider test: answered \(text.count, privacy: .public) characters")
             } catch {
                 aiProviderStatus = "failed: \(error.localizedDescription)"
+                localAILog.error("AI provider test failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }

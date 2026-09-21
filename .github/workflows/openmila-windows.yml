@@ -224,6 +224,27 @@ jobs:
           # zip per merge does not accumulate.
           retention-days: 7
 
+      # What the WinUI build actually draws. Nobody on this project has a
+      # Windows desktop at hand while developing, and the first hands-on report
+      # was "a third of the page and black boxes", so the runner starts the
+      # packaged app, captures its window, and uploads the images.
+      - name: Screenshot the app
+        if: always()
+        timeout-minutes: 5
+        continue-on-error: true
+        run: |
+          $stage = Get-ChildItem dist -Directory -Filter "OpenMila-*-win64" | Select-Object -First 1
+          if (-not $stage) { Write-Host "no staged payload to screenshot"; exit 0 }
+          .\scripts\port\screenshot-windows.ps1 -Stage $stage.FullName -Out "$env:RUNNER_TEMP\shots"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: windows-screenshots
+          path: ${{ runner.temp }}\shots\*
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload the build log on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

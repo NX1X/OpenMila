@@ -73,9 +73,33 @@ public struct Logger: Sendable {
     private let backing: Logging.Logger
 
     public init(subsystem: String, category: String) {
-        var logger = Logging.Logger(label: subsystem)
+        var logger = Logging.Logger(label: Self.portSubsystem(for: subsystem))
         logger[metadataKey: "category"] = .string(category)
         backing = logger
+    }
+
+    /// Upstream names its log subsystems after itself: `io.island.whisper.
+    /// IslandWhisper`, `io.island.mila.Mila`, and a handful more, in about
+    /// seventy files. Those are Mila's identifiers, not this port's, and they
+    /// are what a user reads in every line of openmila.log. Rather than edit
+    /// every upstream file (and merge every one on each sync), the shim maps
+    /// them here: the `io.island.` prefix becomes the port's own reverse-DNS
+    /// name, and whatever followed it is kept, so `io.island.mila.claude`
+    /// reads `io.github.nx1x.openmila.mila.claude` and a line is still
+    /// traceable to the code that wrote it. Only logging is touched; the
+    /// UserDefaults suites and queue labels that share those strings are
+    /// persistence contracts and stay exactly as upstream wrote them.
+    static func portSubsystem(for upstream: String) -> String {
+        let prefix = "io.island."
+        guard upstream.hasPrefix(prefix) else { return upstream }
+        let rest = upstream.dropFirst(prefix.count)
+        // The two most common tails say nothing a reader needs.
+        switch rest {
+        case "whisper.IslandWhisper", "mila.Mila", "Island":
+            return "io.github.nx1x.openmila"
+        default:
+            return "io.github.nx1x.openmila." + rest
+        }
     }
 
     public init() {
