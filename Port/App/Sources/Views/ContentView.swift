@@ -90,6 +90,12 @@ struct ContentView: View {
                 EmptyView()
             }
         }
+        // The window's minimum size comes from its content, so without this the
+        // user can drag the window down to a width where a label wraps to one
+        // word - or one character - per line, which is what the download
+        // banner looked like when it was reported. Upstream fixes the same
+        // number on the macOS window (min width 1000).
+        .frame(minWidth: Theme.windowMinWidth, minHeight: Theme.windowMinHeight)
         .sheet(isPresented: $showSettings) {
             SettingsView(model: model, isPresented: $showSettings)
         }
