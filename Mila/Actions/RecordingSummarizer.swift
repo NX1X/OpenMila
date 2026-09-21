@@ -601,10 +601,34 @@ final class RecordingSummarizer: ObservableObject {
     ///
     /// A JSON object that reaches step 3 and yields nothing readable returns
     /// an EMPTY summary rather than the blob — see `unreadableEnvelope`.
+    /// Strips a heading a model invented for the summary section.
+    ///
+    /// Modified by NX1X for OpenMila; see CHANGES.md. The prompt asks for the
+    /// summary as plain text followed by `###ACTION_ITEMS###`, and a large
+    /// model obliges. A small local one (qwen2.5:3b through Ollama, seen on
+    /// 2026-09-21) labels the first section too, so the saved summary began
+    /// with a literal `###SUMMARY###` line. Only a whole first line made of a
+    /// hash-delimited upper-case label is removed, so prose, Markdown headings
+    /// with real words and anything containing the text of the summary itself
+    /// are untouched.
+    static func strippingSectionHeading(_ text: String) -> String {
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        guard let first = lines.first else { return text }
+        let heading = first.trimmingCharacters(in: .whitespaces)
+        let body = heading.trimmingCharacters(in: CharacterSet(charactersIn: "#")).trimmingCharacters(in: .whitespaces)
+        let isLabel = !body.isEmpty
+            && heading.hasPrefix("#")
+            && body.uppercased() == body
+            && body.allSatisfy { $0.isLetter || $0 == "_" || $0 == " " }
+        guard isLabel else { return text }
+        lines.removeFirst()
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func parseSummaryAndItems(
         from raw: String
     ) -> (summary: String, items: [ActionItem], origin: SummaryParseOrigin) {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = strippingSectionHeading(raw.trimmingCharacters(in: .whitespacesAndNewlines))
         if let sentinel = trimmed.range(of: actionItemsSentinel) {
             let summary = String(trimmed[..<sentinel.lowerBound])
                 .trimmingCharacters(in: .whitespacesAndNewlines)

@@ -107,3 +107,48 @@ final class FileTranscriberTwinTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 }
+
+
+/// A summary heading a small local model adds on its own.
+///
+/// Found by running the real summariser against Ollama with qwen2.5:3b: the
+/// prompt asks for plain text then `###ACTION_ITEMS###`, and the model labelled
+/// the first section as well, so the stored summary started with a literal
+/// `###SUMMARY###`.
+@MainActor
+final class SummarySectionHeadingTests: XCTestCase {
+    func test_an_invented_section_label_is_dropped() {
+        let raw = "###SUMMARY###\n\nThe team agreed to ship Linux first."
+        XCTAssertEqual(RecordingSummarizer.strippingSectionHeading(raw),
+                       "The team agreed to ship Linux first.")
+    }
+
+    func test_the_whole_summary_survives_the_strip() {
+        let raw = "## SUMMARY\nLine one.\nLine two."
+        XCTAssertEqual(RecordingSummarizer.strippingSectionHeading(raw), "Line one.\nLine two.")
+    }
+
+    /// A heading with real words is the user's content, not a label.
+    func test_a_markdown_heading_with_words_is_kept() {
+        let raw = "# Notes from the standup\nWe shipped."
+        XCTAssertEqual(RecordingSummarizer.strippingSectionHeading(raw), raw)
+    }
+
+    func test_plain_prose_is_untouched() {
+        let raw = "The team agreed to ship Linux first."
+        XCTAssertEqual(RecordingSummarizer.strippingSectionHeading(raw), raw)
+    }
+
+    /// End to end through the parser, with the action-item sentinel present.
+    func test_the_parser_drops_the_label_and_still_reads_the_items() {
+        let raw = """
+        ###SUMMARY###
+        Ship Linux first.
+        \(RecordingSummarizer.actionItemsSentinel)
+        [{"id": "cut-beta", "text": "Cut the beta", "source": "inferred"}]
+        """
+        let parsed = RecordingSummarizer.parseSummaryAndItems(from: raw)
+        XCTAssertEqual(parsed.summary, "Ship Linux first.")
+        XCTAssertEqual(parsed.items.map(\.text), ["Cut the beta"])
+    }
+}
