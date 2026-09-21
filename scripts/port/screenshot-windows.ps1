@@ -66,6 +66,19 @@ try {
     $bitmap.Save((Join-Path $Out "window.png"), [System.Drawing.Imaging.ImageFormat]::Png)
     $graphics.Dispose(); $bitmap.Dispose()
 
+    # A second view: the recordings list beside its detail, which is the
+    # three-column layout. Reached by keyboard, since the sidebar list is
+    # the first focusable thing after the menu bar: Tab into it, Down once.
+    [System.Windows.Forms.SendKeys]::SendWait("{TAB}{TAB}{DOWN}")
+    Start-Sleep -Seconds 4
+    $bitmap = New-Object System.Drawing.Bitmap $width, $height
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $dc = $graphics.GetHdc()
+    [OmWin]::PrintWindow($handle, $dc, 2) | Out-Null
+    $graphics.ReleaseHdc($dc)
+    $bitmap.Save((Join-Path $Out "window-list.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+    $graphics.Dispose(); $bitmap.Dispose()
+
     $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $shot = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
     $g = [System.Drawing.Graphics]::FromImage($shot)

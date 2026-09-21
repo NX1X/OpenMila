@@ -244,8 +244,11 @@ struct SidebarView: View {
                 Button("Settings") { showSettings = true }.fixedSize(horizontal: true, vertical: false)
                 Button("About") { ui.object.showAbout = true }.fixedSize(horizontal: true, vertical: false)
                 Spacer()
-                Text(AppIdentity.version).font(.caption2).foregroundColor(Theme.secondaryText)
-            }.padding()
+                // The version on its own line under the buttons, not fighting
+                // them for the row: beside them it wrapped to "1.9.5-/beta.2+po/rt.5".
+            }.padding([.leading, .trailing, .top])
+            Text(AppIdentity.version).font(.caption2).foregroundColor(Theme.secondaryText)
+                .padding([.leading, .trailing, .bottom])
         }
         .sheet(isPresented: $showFolderSheet) {
             VStack(alignment: .leading, spacing: 10) {
