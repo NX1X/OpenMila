@@ -29,7 +29,7 @@ if ($LASTEXITCODE -ne 0) { throw "openmila-mcp build failed" }
 
 if ($Test) {
     Write-Host "==> port tests"
-    swift test @flags --filter "^(ShimTests|RecordingTests)\."
+    swift test @flags --filter "^(ShimTests|RecordingTests|LocalAITests)\."
     if ($LASTEXITCODE -ne 0) { throw "tests failed" }
 }
 

@@ -105,7 +105,7 @@ nobody can see is never allowed to delete anything.
 | Recordings, transcripts, models, MCP contracts | `%APPDATA%\Mila\` | No. Only with the purge. |
 | Settings | sidecars in `%APPDATA%\Mila\`, plus a preferences file the app writes under `%LOCALAPPDATA%` | The sidecars go with the purge; the preferences file is always kept. |
 | Logs | `%LOCALAPPDATA%\OpenMila\logs\` | No: they are what a bug report attaches. |
-| Cache | `%LOCALAPPDATA%\OpenMila\cache\` | Yes. It is regenerable. |
+| Cache | `%LOCALAPPDATA%\OpenMila\cache\` | Yes, except `cache\local-ai` (the local AI server and models), which the purge removes. |
 | The program | `%LOCALAPPDATA%\Programs\OpenMila\` | Yes. |
 | Shortcuts, association, Installed Apps entry | Start menu, desktop, `HKCU\Software\Classes` | Yes. |
 
@@ -208,7 +208,7 @@ Without a terminal to ask on, both prompts answer themselves with "keep".
 | Recordings, transcripts, models, MCP contracts | `~/.local/share/Mila/` | No. `--purge` only. |
 | Settings | sidecars in `~/.local/share/Mila/`, plus a plist the app writes under `~/.config/` | No. `--purge` removes both. |
 | Logs | `~/.local/state/openmila/logs/` | No. `--purge` only. |
-| Cache | `~/.cache/openmila/` | Yes. It is regenerable. |
+| Cache | `~/.cache/openmila/` | Yes, except `local-ai/` (the local AI server and models), which `--purge` removes. |
 | Secrets (API keys, tokens) | your desktop keyring, or `~/.local/share/Mila/secrets/` where no keyring runs | No. `--purge` only. |
 | Launcher entry, icons, MIME type | `~/.local/share/applications`, `icons`, `mime` | Yes. |
 | The program | the AppImage file, or `/opt/openmila` from the .deb | Yes (the .deb's part through `apt remove`). |

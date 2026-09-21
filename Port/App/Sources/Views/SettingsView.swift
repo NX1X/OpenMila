@@ -5,6 +5,7 @@
 
 import Dictation
 import Foundation
+import LocalAI
 #if os(Linux)
 import LinuxPlatform
 #endif
@@ -32,6 +33,9 @@ struct SettingsView: View {
     @State var gpuEnabled = true
     @State var gpuDevice = GPUSettings.automaticLabel
     @State var aiProviderStatus = ""
+    @State var localModelTitle = LocalModel.recommended.title
+    @State var localAIStatus = ""
+    @State var localAIBusy = false
     @State var hotkeys: Observed<HotkeySettings>
     @State var chordEN = ""
     @State var chordHE = ""
@@ -404,6 +408,27 @@ struct SettingsView: View {
             }
 
             Divider()
+            Text("Local AI, set up for you").font(.headline)
+            Text("One button installs a model server on this machine, downloads an open model, and points the AI features at it. Nothing leaves the computer afterwards. The server and its models live under the app's cache and go with an uninstall purge.")
+                .font(.caption).foregroundColor(Theme.secondaryText)
+            Picker(of: LocalModel.catalogue.map(\.title), selection: Binding(
+                get: { localModelTitle },
+                set: { if let title = $0 { localModelTitle = title } }))
+            if let chosen = LocalModel.catalogue.first(where: { $0.title == localModelTitle }) {
+                Text("\(chosen.publisher), \(chosen.licence), about \(String(format: "%.1f", chosen.sizeGB)) GB, wants \(chosen.minimumRAMGB) GB of memory or more.")
+                    .font(.caption).foregroundColor(Theme.secondaryText)
+            }
+            HStack {
+                Button(localAIBusy ? "Setting up..." : "Set up local AI") { setUpLocalAI() }
+                Text(localAIStatus).font(.caption)
+                    .foregroundColor(localAIStatus.hasPrefix("ready") ? Theme.success : Theme.secondaryText)
+            }
+            if !model.localAI.isRuntimeInstalled {
+                Text("First time: the server is a 1.4 GB download, verified against its published digest before anything runs; the model is another few GB.")
+                    .font(.caption).foregroundColor(Theme.secondaryText)
+            }
+
+            Divider()
             HStack {
                 Button("Test the provider") { testAIProvider() }
                 Text(aiProviderStatus).font(.caption)
@@ -413,6 +438,34 @@ struct SettingsView: View {
                  ? "Ready. AI features can use this provider."
                  : "Not ready yet: choose a provider and fill in what it needs.")
                 .font(.caption).foregroundColor(Theme.secondaryText)
+        }
+    }
+
+    /// Runtime, server, model, then the settings, in that order: the provider
+    /// is switched only once everything it points at is actually there.
+    func setUpLocalAI() {
+        guard !localAIBusy,
+              let chosen = LocalModel.catalogue.first(where: { $0.title == localModelTitle }) else { return }
+        localAIBusy = true
+        localAIStatus = "starting"
+        let managed = model.localAI
+        let settings = model.llmSettings
+        managed.onStage = { stage in
+            Task { @MainActor in localAIStatus = stage.description }
+        }
+        Task { @MainActor in
+            do {
+                try await managed.setUp(model: chosen)
+                settings.tool = .openaiCompatible
+                settings.openAIProvider = .ollamaLocal
+                settings.openAIBaseURL = ManagedOllama.baseURLForProvider
+                settings.openAIModelName = chosen.name
+                if !settings.summaryEnabled { settings.summaryEnabled = true }
+                localAIStatus = "ready: \(chosen.title) on this machine, and selected as the provider"
+            } catch {
+                localAIStatus = "failed: \(error.localizedDescription)"
+            }
+            localAIBusy = false
         }
     }
 

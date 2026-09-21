@@ -44,7 +44,7 @@ let package = Package(
         // `swift test` never has to build the UI toolkit.
         .library(name: "OpenMilaCore", targets: [
             "Mila", "Combine", "OSLog", "os", "CryptoKit", "OpenMilaLogging",
-            "PlatformKit", "AudioCapture", "Recording", "Updater", "Dictation",
+            "PlatformKit", "AudioCapture", "Recording", "Updater", "Dictation", "LocalAI",
         ]),
         .library(name: "OpenMilaLinux", targets: ["LinuxPlatform"]),
         .library(name: "OpenMilaWindows", targets: ["WindowsPlatform"]),
@@ -113,6 +113,13 @@ let package = Package(
             dependencies: ["PlatformKit", .product(name: "Crypto", package: "swift-crypto")],
             path: "Port/Updater"
         ),
+        // Local AI in one place: installs and runs a pinned Ollama under the
+        // app's cache, pulls a model, and hands the AI features an endpoint.
+        .target(
+            name: "LocalAI",
+            dependencies: [.product(name: "Crypto", package: "swift-crypto")],
+            path: "Port/LocalAI"
+        ),
         .target(
             name: "Dictation",
             dependencies: ["Mila", "Combine", "PlatformKit", .product(name: "TranscriptionCore", package: "TranscriptionCore")],
@@ -173,6 +180,11 @@ let package = Package(
             path: "Port/Tests/LinuxPlatformTests"
         ),
         .testTarget(
+            name: "LocalAITests",
+            dependencies: ["LocalAI"],
+            path: "Port/Tests/LocalAITests"
+        ),
+        .testTarget(
             name: "UpdaterTests",
             dependencies: ["Updater", "PlatformKit", .product(name: "Crypto", package: "swift-crypto")],
             path: "Port/Tests/UpdaterTests"
@@ -201,7 +213,7 @@ let package = Package(
         // Headless end-to-end checks of the app's real code paths.
         .executableTarget(
             name: "openmila-selftest",
-            dependencies: ["Mila", "OpenMilaLogging", .product(name: "TranscriptionCore", package: "TranscriptionCore")],
+            dependencies: ["Mila", "OpenMilaLogging", "LocalAI", .product(name: "TranscriptionCore", package: "TranscriptionCore")],
             path: "Port/SelfTest",
             swiftSettings: [.unsafeFlags(["-enable-testing"])]
         ),

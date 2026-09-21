@@ -226,8 +226,19 @@ else
 fi
 
 # 4. The cache. Regenerable by definition, and it is not where anything the user
-#    made is kept.
-remove "$CACHE_DIR"
+#    made is kept - with one exception. local-ai/ holds the model server and the
+#    language models the user chose to download from inside the app, several
+#    gigabytes that took a while to arrive. Re-downloadable, but not something a
+#    plain uninstall should throw away unasked: it stays, and goes with --purge.
+if [ -d "$CACHE_DIR" ]; then
+  for entry in "$CACHE_DIR"/* "$CACHE_DIR"/.[!.]*; do
+    [ -e "$entry" ] || continue
+    case "$(basename "$entry")" in
+      local-ai) echo "kept: $entry (local AI runtime and models; --purge removes it)" ;;
+      *) remove "$entry" ;;
+    esac
+  done
+fi
 
 # 5. The AppImage itself.
 if [ -n "$APPIMAGE_FILE" ] && [ "$KEEP_APPIMAGE" -eq 0 ]; then
@@ -240,6 +251,15 @@ if [ -n "$APPIMAGE_FILE" ] && [ "$KEEP_APPIMAGE" -eq 0 ]; then
   fi
 elif [ -n "$APPIMAGE_FILE" ]; then
   echo "kept: $APPIMAGE_FILE"
+fi
+
+# 5b. With --purge, the local AI runtime and models too. Sized first, because
+#     "a few gigabytes" is the number a user wants before answering.
+if [ "$PURGE" -eq 1 ] && [ -d "$CACHE_DIR/local-ai" ]; then
+  size="$(du -sh "$CACHE_DIR/local-ai" 2>/dev/null | cut -f1)"
+  echo "local AI (model server and downloaded models): $CACHE_DIR/local-ai (${size:-?})"
+  remove "$CACHE_DIR/local-ai"
+  rmdir "$CACHE_DIR" 2>/dev/null || true
 fi
 
 # 6. The .deb, which belongs to the package manager. Removing its files by hand

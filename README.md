@@ -39,6 +39,8 @@ nobody has run any of it on a Windows desktop yet. Treat it as untested.
 
 [`docs/port/PARITY.md`](docs/port/PARITY.md) tracks every Mila feature with a
 per-system status and the evidence behind it, including what is still missing.
+[`docs/port/LOCAL-AI.md`](docs/port/LOCAL-AI.md) covers the one-button local AI
+setup, a port-only feature.
 [`docs/port/ROADMAP.md`](docs/port/ROADMAP.md) is the ordered list of what still
 stands between the current build and full parity, and what done means for each.
 

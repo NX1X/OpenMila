@@ -6,6 +6,7 @@
 //   openmila-selftest models            download the English model (large-v3-turbo) via ModelManager
 //   openmila-selftest import <dir>      watched-folder import of <dir>, then transcription
 //   openmila-selftest summarize [--provider claude|ollama] [--model name] [--endpoint url]
+//   openmila-selftest local-ai [--model name] [--cache dir]   managed Ollama end to end
 //   openmila-selftest summarize         summarise the newest recording with the configured `claude` CLI
 //   openmila-selftest diarize <file>    install torch if needed, then label speakers
 //   openmila-selftest list              show the store
@@ -16,6 +17,7 @@
 
 import Foundation
 import OpenMilaLogging
+import LocalAI
 import TranscriptionCore
 @testable import Mila
 
@@ -200,6 +202,49 @@ func run() async {
             say(String(format: "  %6.2f - %6.2f  %@", turn.start, turn.end, turn.speaker))
         }
         if turns.isEmpty { exit(1) }
+
+    case "local-ai":
+        // The whole managed path, headless: runtime, server, model, then one
+        // summary through it. `--model` picks from the catalogue by name;
+        // `--cache` overrides where the runtime and models go.
+        // The app's cache directory, as LinuxAppPaths resolves it: the runtime
+        // and models are regenerable and belong there, not with the data.
+        let cache = option("--cache", in: args).map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? (ProcessInfo.processInfo.environment["XDG_CACHE_HOME"].map { URL(fileURLWithPath: $0) }
+                ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cache"))
+                .appendingPathComponent("openmila", isDirectory: true)
+        let wanted = option("--model", in: args) ?? LocalModel.recommended.name
+        guard let model = LocalModel.catalogue.first(where: { $0.name == wanted }) else {
+            fail("unknown model \(wanted); catalogue: \(LocalModel.catalogue.map(\.name).joined(separator: ", "))")
+        }
+        let managed = ManagedOllama(cacheDirectory: cache)
+        var lastLine = ""
+        managed.onStage = { stage in
+            let line = stage.description
+            if line != lastLine { lastLine = line; say("  \(line)") }
+        }
+        say("local AI under \(managed.root.path)")
+        say("runtime installed: \(managed.isRuntimeInstalled), server answering: \(await managed.isServerAnswering())")
+        do {
+            try await managed.setUp(model: model)
+        } catch {
+            fail("local AI setup failed: \(error.localizedDescription)")
+        }
+        say("models: \(await managed.installedModels().joined(separator: ", "))")
+        let llm = LLMSettings(defaults: defaults)
+        llm.tool = .openaiCompatible
+        llm.openAIProvider = .ollamaLocal
+        llm.openAIBaseURL = ManagedOllama.baseURLForProvider
+        llm.openAIModelName = model.name
+        do {
+            let reply = try await LLMRunner.run(tool: .openaiCompatible, prompt: "Reply with the single word: ready.",
+                                                transcript: "", executablePathOverride: nil, model: model.name,
+                                                timeout: 300, openAIBaseURL: llm.openAIBaseURL, openAIAPIKey: nil)
+            say("provider answered: \(reply.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))")
+        } catch {
+            fail("the provider did not answer: \(error.localizedDescription)")
+        }
+        managed.stopServer()
 
     case "list":
         let store = RecordingStore(rootDirectory: root)

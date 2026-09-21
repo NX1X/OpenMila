@@ -16,6 +16,7 @@ import LinuxPlatform
 import OpenMilaLogging
 import PlatformKit
 import Recording
+import LocalAI
 import TranscriptionCore
 @testable import Mila
 
@@ -47,6 +48,8 @@ final class AppModel {
     let store: RecordingStore
     let storageSettings: RecordingStorageSettings
     let gpu: GPUSettings
+    /// The one-stop local AI: a pinned Ollama under the cache, run as a child.
+    let localAI: ManagedOllama
     let modelManager: ModelManager
     let languageSettings: RecordingLanguageSettings
     let diarizationSettings: DiarizationSettings
@@ -88,6 +91,7 @@ final class AppModel {
         // Before anything loads a model: the engine reads the flag on every
         // load, and the first load can happen as soon as the window is up.
         gpu = GPUSettings()
+        localAI = ManagedOllama(cacheDirectory: platform.paths.cacheDirectory)
         store = RecordingStore(rootDirectory: platform.paths.dataDirectory,
                                customRecordingsDirectory: storageSettings.customDirectory)
         modelManager = ModelManager(modelsDirectory: platform.paths.dataDirectory.appendingPathComponent("Models", isDirectory: true))
@@ -100,6 +104,11 @@ final class AppModel {
         liveTranscriber = LiveTranscriber(transcription: transcription)
         session = RecordingSession(microphone: platform.microphone, appAudio: platform.appAudio)
         llmSettings = LLMSettings()
+        if llmSettings.tool == .openaiCompatible, llmSettings.openAIProvider == .ollamaLocal,
+           localAI.isRuntimeInstalled {
+            let managed = localAI
+            Task.detached { try? await managed.startServer() }
+        }
         mcpAccess = MCPAccessSettings()
         audioInput = AudioInputSettings()
         speakerDirectory = SpeakerDirectory(directory: platform.paths.dataDirectory)
