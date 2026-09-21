@@ -34,6 +34,45 @@ $env:APPDATA = Join-Path $Out "appdata"
 $env:LOCALAPPDATA = Join-Path $Out "localappdata"
 New-Item -ItemType Directory -Force -Path $env:APPDATA, $env:LOCALAPPDATA | Out-Null
 
+function Capture-Window([string]$Name, [string]$Section) {
+    if ($Section) { $env:OPENMILA_START_SECTION = $Section } else { Remove-Item Env:OPENMILA_START_SECTION -ErrorAction SilentlyContinue }
+    $process = Start-Process -FilePath $exe -WorkingDirectory $Stage -PassThru
+    try {
+        $deadline = (Get-Date).AddSeconds($SettleSeconds + 40)
+        do {
+            Start-Sleep -Seconds 2
+            $process.Refresh()
+            $handle = $process.MainWindowHandle
+        } while ($handle -eq [IntPtr]::Zero -and (Get-Date) -lt $deadline -and -not $process.HasExited)
+        if ($process.HasExited) { throw "openmila.exe exited with $($process.ExitCode) before showing a window" }
+        if ($handle -eq [IntPtr]::Zero) { throw "openmila.exe showed no window within the deadline" }
+        Start-Sleep -Seconds $SettleSeconds
+        [OmWin]::ShowWindow($handle, 9) | Out-Null
+        [OmWin]::SetForegroundWindow($handle) | Out-Null
+        Start-Sleep -Seconds 2
+        $rect = New-Object OmWin+RECT
+        [OmWin]::GetWindowRect($handle, [ref]$rect) | Out-Null
+        $width = $rect.R - $rect.L; $height = $rect.B - $rect.T
+        if ($width -le 0 -or $height -le 0) { throw "window has no size: $width x $height" }
+        Write-Host "$Name window: ${width}x${height} at $($rect.L),$($rect.T)"
+        $bitmap = New-Object System.Drawing.Bitmap $width, $height
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        $dc = $graphics.GetHdc()
+        [OmWin]::PrintWindow($handle, $dc, 2) | Out-Null   # PW_RENDERFULLCONTENT
+        $graphics.ReleaseHdc($dc)
+        $bitmap.Save((Join-Path $Out "$Name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+        $graphics.Dispose(); $bitmap.Dispose()
+        return $handle
+    } finally {
+        if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+    }
+}
+
+# The recordings list beside its detail is the three-column layout, and the
+# one worth a second image. OPENMILA_START_SECTION is honoured by the app so
+# a capture can start there without driving the UI blind.
+Capture-Window -Name "window-list" -Section "all" | Out-Null
+
 $process = Start-Process -FilePath $exe -WorkingDirectory $Stage -PassThru
 try {
     $deadline = (Get-Date).AddSeconds($SettleSeconds + 40)
@@ -64,19 +103,6 @@ try {
     [OmWin]::PrintWindow($handle, $dc, 2) | Out-Null   # PW_RENDERFULLCONTENT
     $graphics.ReleaseHdc($dc)
     $bitmap.Save((Join-Path $Out "window.png"), [System.Drawing.Imaging.ImageFormat]::Png)
-    $graphics.Dispose(); $bitmap.Dispose()
-
-    # A second view: the recordings list beside its detail, which is the
-    # three-column layout. Reached by keyboard, since the sidebar list is
-    # the first focusable thing after the menu bar: Tab into it, Down once.
-    [System.Windows.Forms.SendKeys]::SendWait("{TAB}{TAB}{DOWN}")
-    Start-Sleep -Seconds 4
-    $bitmap = New-Object System.Drawing.Bitmap $width, $height
-    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-    $dc = $graphics.GetHdc()
-    [OmWin]::PrintWindow($handle, $dc, 2) | Out-Null
-    $graphics.ReleaseHdc($dc)
-    $bitmap.Save((Join-Path $Out "window-list.png"), [System.Drawing.Imaging.ImageFormat]::Png)
     $graphics.Dispose(); $bitmap.Dispose()
 
     $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds

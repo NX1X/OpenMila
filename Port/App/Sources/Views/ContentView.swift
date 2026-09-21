@@ -7,6 +7,19 @@ import SwiftCrossUI
 @testable import Mila
 
 enum SidebarSection: Hashable {
+    /// Where the window opens. Home, unless OPENMILA_START_SECTION names
+    /// another section: that exists for the Windows CI capture, which starts
+    /// the app on the recordings list to photograph the three-column layout
+    /// rather than driving a WinUI list blind by keyboard.
+    static var startingSection: SidebarSection? {
+        switch ProcessInfo.processInfo.environment["OPENMILA_START_SECTION"] {
+        case "all": return .all
+        case "dictations": return .dictations
+        case "trash": return .trash
+        default: return .home
+        }
+    }
+
     case home
     case all
     case folder(String)
@@ -44,7 +57,7 @@ struct ContentView: View {
     let model: AppModel
     @State var store: Observed<RecordingStore>
     @State var transcription: Observed<TranscriptionService>
-    @State var section: SidebarSection? = .home
+    @State var section: SidebarSection? = SidebarSection.startingSection
     @State var selectedRecording: UUID?
     @State var showSettings = false
     @State var importer: Observed<MilaConfigImporter>
