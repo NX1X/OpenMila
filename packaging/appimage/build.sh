@@ -19,11 +19,16 @@ TOOL_URL="https://github.com/AppImage/appimagetool/releases/download/continuous/
 TOOL_SHA256="a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0"
 
 export PATH="$SWIFT_HOME/usr/bin:$PATH"
-FLAGS=(-c release -Xcc "-I$WHISPER/include" -Xlinker "-L$WHISPER/lib")
+# Release optimisation is memory-hungry, and this runs inside a container
+# where the compiler segfaulted at the runner's default parallelism (exit 139
+# in the release pipeline, while the same build passes on a developer's
+# machine). Two jobs is slower and finishes.
+JOBS="${OPENMILA_BUILD_JOBS:-2}"
+FLAGS=(-c release -j "$JOBS" -Xcc "-I$WHISPER/include" -Xlinker "-L$WHISPER/lib")
 
 echo "==> release builds"
 (cd "$ROOT" && swift build "${FLAGS[@]}" --product openmila-cli >/dev/null && swift build "${FLAGS[@]}" --product openmila-mcp >/dev/null)
-(cd "$ROOT/Port/App" && swift build --build-system native -j 3 "${FLAGS[@]}" --product openmila >/dev/null)
+(cd "$ROOT/Port/App" && swift build --build-system native "${FLAGS[@]}" --product openmila >/dev/null)
 ROOT_BIN="$(cd "$ROOT" && swift build "${FLAGS[@]}" --show-bin-path 2>/dev/null | tail -1)"
 APP_BIN="$ROOT/Port/App/.build/release"
 
