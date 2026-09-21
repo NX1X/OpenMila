@@ -49,7 +49,7 @@ of it on a Windows desktop yet.
 
 | # | Feature | Linux | Windows |
 |---|---|---|---|
-| 19 | On-device whisper.cpp, ivrit.ai large-v3 (Hebrew) and large-v3-turbo (English) | done - built with the Vulkan backend; a real GPU is used, a software Vulkan device is refused because it is slower than the CPU backend, and a machine with neither runs on the CPU. `openmila-cli gpu` reports what was found. Not yet measured on real GPU hardware | partial - the same code, but the Windows build needs the Vulkan SDK on the runner before the backend is compiled in |
+| 19 | On-device whisper.cpp, ivrit.ai large-v3 (Hebrew) and large-v3-turbo (English) | done - built with the Vulkan backend; a real GPU is used, a software Vulkan device is refused because it is slower than the CPU backend, and a machine with neither runs on the CPU. `openmila-cli gpu` reports what was found. Not yet measured on real GPU hardware | written - the same code, and CI installs the Vulkan SDK so the backend is compiled into the release zip. Never run on a Windows machine, with or without a GPU |
 | 20 | CoreML / ANE encoder and its banner | n/a - no ANE; `.mlmodelc` downloads skipped | n/a |
 | 21 | First-launch model download with progress and SHA-256 verification | done - verified by downloading both models | written |
 | 22 | Model deletion frees the whole install and keeps the choice sane | done - upstream `ModelManager` | written |
