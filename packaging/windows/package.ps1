@@ -90,10 +90,32 @@ Copy-Item "$Prefix\bin\*.dll" $stage -ErrorAction SilentlyContinue
 Copy-Item "$Prefix\lib\*.dll" $stage -ErrorAction SilentlyContinue
 
 # The Swift runtime DLLs, so the machine needs no Swift installation.
-$runtime = Split-Path (Get-Command swift).Source -Parent
-$runtimeRoot = Join-Path (Split-Path (Split-Path $runtime -Parent) -Parent) "Runtimes"
+#
+# These live at <SwiftRoot>\Runtimes\<version>\usr\bin, and swift.exe at
+# <SwiftRoot>\Toolchains\<version>\usr\bin\swift.exe, which is five levels
+# down. An earlier version of this walked up two levels and looked for
+# Runtimes inside the toolchain, found nothing, copied nothing, and shipped a
+# zip whose openmila.exe could not start: "Foundation.dll was not found".
+$swiftExe = (Get-Command swift -ErrorAction Stop).Source
+$swiftRoot = Split-Path (Split-Path (Split-Path (Split-Path (Split-Path $swiftExe -Parent) -Parent) -Parent) -Parent) -Parent
+$runtimeRoot = Join-Path $swiftRoot "Runtimes"
+$copied = 0
 if (Test-Path $runtimeRoot) {
-    Get-ChildItem $runtimeRoot -Recurse -Filter "*.dll" | ForEach-Object { Copy-Item $_.FullName $stage -Force }
+    Get-ChildItem $runtimeRoot -Recurse -Filter "*.dll" | ForEach-Object {
+        Copy-Item $_.FullName $stage -Force
+        $copied++
+    }
+}
+Write-Host "Swift runtime: $copied DLLs from $runtimeRoot"
+
+# The zip has to run on a machine with no Swift installed, and the only way to
+# know it will is to check that its runtime is actually in there. A missing
+# DLL is invisible until someone double-clicks the exe, which is exactly how
+# the first build reached a tester.
+$required = @("Foundation.dll", "swiftCore.dll", "swift_Concurrency.dll", "swift_StringProcessing.dll")
+$missing = $required | Where-Object { -not (Test-Path (Join-Path $stage $_)) }
+if ($missing) {
+    throw "the package is missing Swift runtime DLLs and would not start: $($missing -join ', ')"
 }
 
 # Resources beside the binaries: that is where Bundle.main looks.
@@ -111,6 +133,21 @@ foreach ($doc in @("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "README.md")) 
 # where Bundle.main - and so the About screen - looks for resources off macOS.
 Copy-Item (Join-Path $root "brand\icons\openmila.ico") $stage -Force
 Copy-Item (Join-Path $root "brand\icons\openmila-128.png") (Join-Path $stage "openmila.png") -Force
+
+# Proof, not inventory: run the staged CLI with the Swift toolchain taken off
+# PATH, so every DLL it needs has to come from the payload itself. The name
+# check above catches the obvious hole; this catches the one nobody listed.
+$savedPath = $env:PATH
+$env:PATH = (($env:PATH -split ';') | Where-Object { $_ -and $_ -notmatch '(?i)swift' }) -join ';'
+try {
+    & (Join-Path $stage "openmila-cli.exe") | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "openmila-cli.exe exited $LASTEXITCODE" }
+    Write-Host "Smoke: the payload starts with no Swift on PATH"
+} catch {
+    throw "the packaged binaries do not start from the payload alone: $_"
+} finally {
+    $env:PATH = $savedPath
+}
 
 $zip = Join-Path $out "OpenMila-$Version-win64.zip"
 if (Test-Path $zip) { Remove-Item $zip }
