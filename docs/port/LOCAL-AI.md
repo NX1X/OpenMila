@@ -52,6 +52,40 @@ Any other model Ollama can pull works too: pull it by hand with the managed
 runtime (`<cache>/local-ai/runtime/bin/ollama pull <name>`) and type its name
 in the Model field.
 
+## The pin, and what it protects against
+
+The runtime is one exact release: `OllamaRelease.pinned` in
+`Port/LocalAI/ManagedOllama.swift` names the version, the two download URLs
+and the SHA-256 of each archive. The app downloads, computes the digest, and
+runs nothing unless it matches; a mismatch deletes the download and stops.
+That digest, committed to this repository, is the trust anchor.
+
+It has to be, because Ollama publishes no signatures, no build attestations
+and no SBOM for its releases; the only thing beside the assets is a
+`sha256sum.txt` on the same release page, which a compromised page would
+simply replace along with the assets. So:
+
+- **Stable releases only.** `check-ollama-pin.sh` refuses a pin on a
+  pre-release. `v0.34.2`, the current pin, is a stable release.
+- **A bump is a deliberate commit**: stable, at least seven days old (the
+  same cooldown Renovate applies to everything else here), the digests
+  copied from the vendor's `sha256sum.txt` and checked against a fresh
+  download so two sources agree, and a commit message that says why.
+- **Drift is watched.** The `Ollama pin` workflow runs weekly and on any
+  change to the pin, downloads the vendor's `sha256sum.txt` for the pinned
+  release, and fails if the published digests no longer match the pinned
+  ones. A release whose assets were swapped after the pin was taken turns
+  that run red, and the app on every machine already refuses the swapped
+  file.
+- **Models** are pulled by the running server from the Ollama library over
+  HTTPS and verified by their own content digests inside Ollama; the app
+  never fetches a model file itself.
+
+What this does not cover: a release that was already malicious at the moment
+it was pinned. Against that, the only defence is the vendor's reputation and
+the cooldown, which is why the pin is never the newest release on the day
+it appears.
+
 ## Where it lives, and how it goes away
 
 | | Linux | Windows |
