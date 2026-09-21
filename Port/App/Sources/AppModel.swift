@@ -21,13 +21,17 @@ import TranscriptionCore
 
 enum AppIdentity {
     static let name = "OpenMila"
-    // `<upstream>+port.N`: port 0 of Mila v1.9.5-beta.2. The prerelease part
+    // `<upstream>+port.N`: port 1 of Mila v1.9.5-beta.2. The prerelease part
     // comes from upstream's own version, so the updater's beta channel treats
     // this build as a beta, which it is.
     static let version = "1.9.5-beta.2+port.1"
     static let upstreamVersion = "1.9.5-beta.2"
     static let repository = "NX1X/OpenMila"
     static let website = "https://openmila.nx1xlab.dev"
+    /// Windows taskbar identity. The installer stamps this same string on the
+    /// Start menu and desktop shortcuts (packaging/windows/OpenMila.iss); the
+    /// two must match or a launched window gets its own ungrouped button.
+    static let appUserModelID = "NX1X.OpenMila"
 }
 
 /// App-wide UI requests that menus raise and views present.

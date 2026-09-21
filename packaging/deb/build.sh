@@ -42,6 +42,13 @@ for dir in "$APPDIR"/usr/share/icons/hicolor/*/apps; do
 done
 cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/usr/share/doc/openmila/"
 
+# The per-user cleanup, as a command of its own. `apt remove` takes the program
+# away but cannot reach into a user's home, so the autostart entry, the MCP
+# registration and the cache would otherwise outlive the package. Run it before
+# apt, which is what it tells the user to do; it removes no recordings,
+# transcripts or settings unless asked with --purge.
+install -m 755 "$ROOT/packaging/uninstall.sh" "$STAGE/usr/bin/openmila-uninstall"
+
 # Launchers: the app, and the CLI and MCP helper under their own names.
 for name in openmila openmila-cli openmila-mcp; do
   cat > "$STAGE/usr/bin/$name" <<LAUNCH
@@ -91,6 +98,14 @@ chmod 755 "$STAGE/DEBIAN/postinst"
 # Removal refreshes the same caches. Nothing here touches the user's data:
 # recordings, transcripts and settings live under $HOME and survive an
 # uninstall on purpose, as upstream's uninstall instructions do.
+#
+# That holds for `purge` too, deliberately. dpkg's purge means "remove the
+# package's own configuration", and a maintainer script runs as root at a moment
+# when it has no business deciding that every account on the machine has
+# finished with its recordings. It could not do it correctly anyway: the data is
+# per user, under each $HOME, and a postrm cannot enumerate them safely. So purge
+# prints where the data is and names the command that removes it, and the person
+# who owns the recordings is the one who runs it.
 cat > "$STAGE/DEBIAN/postrm" <<'POSTRM'
 #!/bin/sh
 set -e
@@ -102,6 +117,13 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
 fi
 if command -v update-mime-database >/dev/null 2>&1; then
   update-mime-database /usr/share/mime || true
+fi
+if [ "$1" = "purge" ]; then
+  echo "openmila: your recordings, transcripts, models and settings were kept."
+  echo "openmila:   ~/.local/share/Mila  recordings, transcripts, models"
+  echo "openmila:   ~/.config            settings"
+  echo "openmila: to remove them, each user runs: openmila-uninstall --purge"
+  echo "openmila: (from the AppImage: ./OpenMila-<version>-x86_64.AppImage --uninstall --purge)"
 fi
 POSTRM
 chmod 755 "$STAGE/DEBIAN/postrm"

@@ -1,8 +1,9 @@
 # Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
 #
-# Cuts a release from a v* tag: Linux packages through Dagger, the Windows zip
-# on a Windows runner, a software bill of materials, checksums, build
-# provenance, and a draft GitHub release for a human to publish.
+# Cuts a release from a v* tag: Linux packages through Dagger, the Windows
+# portable zip and Inno Setup installer on a Windows runner, a software bill of
+# materials, checksums, build provenance, and a draft GitHub release for a human
+# to publish.
 #
 # Release notes come first, as upstream requires: RELEASE_NOTES/v<version>.md
 # must exist and say something, or the release stops before anything is built.
@@ -96,7 +97,9 @@ jobs:
   windows:
     needs: gate
     runs-on: windows-2025
-    timeout-minutes: 100
+    # The packaging step alone is budgeted 75 minutes and the installer another
+    # 30, so the job needs room for both plus the toolchain steps.
+    timeout-minutes: 140
     defaults:
       run:
         shell: pwsh
@@ -155,21 +158,48 @@ jobs:
         timeout-minutes: 20
         run: .\scripts\port\build-whisper.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix"
 
+      # Inno Setup compiles the installer. Pinned to a version: a bare
+      # "choco install innosetup" takes whatever is newest that day, and a
+      # compiler that changes underneath a release makes the release
+      # unreproducible. --require-checksums refuses a package that does not pin
+      # a checksum for the vendor installer it downloads.
+      #
+      # Before the packaging step rather than after it: this takes a minute and
+      # the packaging takes over an hour, so a missing compiler should fail now.
+      - name: Install Inno Setup (pinned)
+        timeout-minutes: 10
+        run: |
+          choco install innosetup --version 6.7.1 --no-progress -y --require-checksums
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "Inno Setup 6.7.1 did not install: $iscc is missing" }
+          Write-Host "ISCC: $iscc"
+
       # A release package is built in release configuration from scratch: the
       # UI toolkit alone is over half an hour.
       - name: Package the portable zip
         timeout-minutes: 75
         run: .\packaging\windows\package.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -Version "${{ needs.gate.outputs.version }}"
 
-      # The zip and its checksum, not the staging directory the zip was built
-      # from: "dist/*" put every loose .exe and .dll on the release page as its
-      # own download, next to the zip that already contained them.
+      # The installer, from the same staging directory the zip above was made
+      # from. It builds nothing: if that stage is missing or incomplete the
+      # script stops here rather than shipping an installer that installs a
+      # broken app.
+      - name: Build the Windows installer
+        timeout-minutes: 30
+        run: .\packaging\windows\build-installer.ps1 -Version "${{ needs.gate.outputs.version }}"
+
+      # The two artifacts and their checksums, named one by one, not the staging
+      # directory they were built from: "dist/*" put every loose .exe and .dll on
+      # the release page as its own download, next to the zip that already
+      # contained them. Keep this list explicit for the same reason.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-package
           path: |
             dist/*.zip
             dist/*.zip.sha256
+            dist/*-setup.exe
+            dist/*-setup.exe.sha256
           if-no-files-found: error
 
   publish:

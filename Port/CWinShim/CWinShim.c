@@ -13,6 +13,21 @@ void *om_hwnd_message(void) { return (void *)HWND_MESSAGE; }
 
 const uint16_t *om_idi_application(void) { return (const uint16_t *)IDI_APPLICATION; }
 
+// SetCurrentProcessExplicitAppUserModelID lives in shell32 and is declared in
+// shobjidl_core.h, which drags in a large part of the COM headers; it is
+// resolved at run time instead, which also keeps the call harmless on a
+// Windows build where the export is somehow missing.
+int32_t om_set_app_user_model_id(const uint16_t *id) {
+    typedef HRESULT(WINAPI * set_id_fn)(PCWSTR);
+    HMODULE shell = LoadLibraryW(L"shell32.dll");
+    if (!shell) return -1;
+    set_id_fn set_id = (set_id_fn)(void *)GetProcAddress(shell, "SetCurrentProcessExplicitAppUserModelID");
+    int32_t result = -1;
+    if (set_id) result = SUCCEEDED(set_id((PCWSTR)id)) ? 0 : -2;
+    FreeLibrary(shell);
+    return result;
+}
+
 // Reads the subject name of the certificate that signed `path` into `subject`.
 // Separate from the trust decision on purpose: trust says the chain is good,
 // this says who it belongs to, and the caller needs both.

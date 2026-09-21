@@ -1,28 +1,36 @@
 # Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
 #
-# Packages OpenMila for Windows as a portable zip: the app, the CLI, the MCP
-# helper, the Swift runtime, whisper.cpp's DLLs, the resources and, when built,
-# the diarization Python runtime.
+# Packages OpenMila for Windows: it builds the payload once into a staging
+# directory - the app, the CLI, the MCP helper, the Swift runtime,
+# whisper.cpp's DLLs, the resources and, when built, the diarization Python
+# runtime - and zips it. That same stage is what the Inno Setup installer is
+# compiled from, so the two artifacts can never disagree about their contents;
+# build-installer.ps1 packages this stage and never rebuilds anything.
 #
 #   packaging\windows\package.ps1 -Prefix C:\path\to\whisper-prefix [-Version 1.9.5+port.0]
+#   packaging\windows\package.ps1 -Prefix ... -Installer   # zip and installer
 param(
     [Parameter(Mandatory = $true)][string]$Prefix,
     [string]$Version,
     # Release is what a real package ships. CI passes debug so the zip step
     # reuses the build the earlier steps already made, instead of compiling
     # the whole UI toolkit a second time.
-    [ValidateSet("debug", "release")][string]$Configuration = "release"
+    [ValidateSet("debug", "release")][string]$Configuration = "release",
+    # Compile the installer from the same stage once the zip is written. Off by
+    # default because it needs Inno Setup; the release workflow runs
+    # build-installer.ps1 as its own step so a missing compiler fails there,
+    # named, instead of silently shipping one artifact short.
+    [switch]$Installer
 )
 $ErrorActionPreference = "Stop"
 
 # Swift and CMake both need the MSVC toolchain on PATH.
 . "$PSScriptRoot\..\..\scripts\port\vsdev.ps1"
-$root = Resolve-Path "$PSScriptRoot\..\.."
-if (-not $Version) {
-    $Version = (Select-String -Path "$root\Port\App\Sources\AppModel.swift" -Pattern 'static let version = "([^"]+)"').Matches[0].Groups[1].Value
-}
+. "$PSScriptRoot\common.ps1"
+$root = Get-OpenMilaRoot -ScriptRoot $PSScriptRoot
+$Version = Resolve-OpenMilaVersion -Root $root -Version $Version
 $out = Join-Path $root "dist"
-$stage = Join-Path $out "OpenMila-$Version-win64"
+$stage = Get-OpenMilaStage -Root $root -Version $Version
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 # link.exe takes /LIBPATH:, not -L.
@@ -152,6 +160,11 @@ try {
 $zip = Join-Path $out "OpenMila-$Version-win64.zip"
 if (Test-Path $zip) { Remove-Item $zip }
 Compress-Archive -Path "$stage\*" -DestinationPath $zip
-(Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  " + (Split-Path $zip -Leaf) |
-    Set-Content -Encoding ascii "$zip.sha256"
+Write-OpenMilaChecksum -Path $zip
 Get-Item $zip | Select-Object Name, Length
+
+# The installer, from the stage above rather than from the zip: same payload,
+# same version, one build.
+# A failure inside the installer script is a terminating error there and
+# propagates out of this one, so there is no exit code to re-check here.
+if ($Installer) { & "$PSScriptRoot\build-installer.ps1" -Version $Version -Stage $stage }

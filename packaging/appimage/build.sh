@@ -56,6 +56,14 @@ for bin in "$APPDIR"/usr/bin/openmila "$APPDIR"/usr/bin/openmila-cli "$APPDIR"/u
 done | sort -u | while read -r lib; do cp -L "$lib" "$APPDIR/usr/lib/"; done
 strip --strip-unneeded "$APPDIR"/usr/bin/openmila* "$APPDIR"/usr/lib/*.so* 2>/dev/null || true
 
+# Desktop integration and its undo, after the strip above so the glob there only
+# ever sees binaries. The AppImage runs with neither of them, so this is what
+# makes an installed launcher entry optional rather than absent: --install writes
+# a .desktop file, the icons and the MIME type into ~/.local/share, --uninstall
+# takes them away again and leaves the user's recordings alone.
+install -m 755 "$ROOT/packaging/appimage/install.sh" "$APPDIR/usr/bin/openmila-install"
+install -m 755 "$ROOT/packaging/uninstall.sh" "$APPDIR/usr/bin/openmila-uninstall"
+
 cat > "$APPDIR/AppRun" <<'RUN'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
@@ -65,6 +73,11 @@ export PATH="$HERE/usr/bin:$PATH"
 case "${1:-}" in
   --cli) shift; exec "$HERE/usr/bin/openmila-cli" "$@" ;;
   --mcp) shift; exec "$HERE/usr/bin/openmila-mcp" "$@" ;;
+  # Optional desktop integration: a launcher entry, icons and the .milaconfig
+  # type in the user's own ~/.local/share. Nothing system-wide, no root, and
+  # the AppImage still runs with none of it.
+  --install) shift; exec "$HERE/usr/bin/openmila-install" "$@" ;;
+  --uninstall) shift; exec "$HERE/usr/bin/openmila-uninstall" "$@" ;;
   *) exec "$HERE/usr/bin/openmila" "$@" ;;
 esac
 RUN

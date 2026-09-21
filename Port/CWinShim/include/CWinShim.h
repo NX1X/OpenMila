@@ -39,4 +39,10 @@ const uint16_t *om_idi_application(void);
 /// cannot be read, which callers must treat as a failed publisher check.
 int32_t om_verify_authenticode(const uint16_t *path, uint16_t *subject, int32_t capacity);
 
+// Names this process for the taskbar. Windows groups a window under the
+// shortcut that launched it only when both carry the same AppUserModelID, and
+// the installer stamps "NX1X.OpenMila" on its shortcuts, so the process has to
+// say the same thing before it shows a window. Returns 0 on success.
+int32_t om_set_app_user_model_id(const uint16_t *id);
+
 #endif

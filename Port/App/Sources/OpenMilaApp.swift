@@ -3,6 +3,9 @@
 import DefaultBackend
 import Foundation
 import SwiftCrossUI
+#if os(Windows)
+import CWinShim
+#endif
 @testable import Mila
 
 @main
@@ -14,6 +17,16 @@ struct OpenMilaApp: App {
             print("\(AppIdentity.name) \(AppIdentity.version) (Mila \(AppIdentity.upstreamVersion))")
             exit(0)
         }
+        #if os(Windows)
+        // Before any window exists: Windows groups a window under the shortcut
+        // that launched it only when the process and the shortcut carry the
+        // same AppUserModelID, and the installer stamps this one on both the
+        // Start menu and desktop shortcuts. Failing is not worth reporting -
+        // the only consequence is an ungrouped taskbar button.
+        _ = Array(AppIdentity.appUserModelID.utf16 + [0]).withUnsafeBufferPointer {
+            om_set_app_user_model_id($0.baseAddress)
+        }
+        #endif
         model = AppModel()
     }
 

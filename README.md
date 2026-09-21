@@ -65,6 +65,8 @@ platform code, not features. The Mila version currently matched is in
 ## Documentation
 
 - [Installing and using OpenMila](docs/openmila/INSTALL.md)
+- [Installing, upgrading and uninstalling](docs/port/INSTALL.md): the Windows
+  installer and the Linux packages, and what an uninstall keeps
 - [Using OpenMila with Claude (MCP)](docs/openmila/MCP.md)
 - [Remote transcription](docs/openmila/REMOTE_SERVER.md): using your own
   server, with Mila's server guides and the few app-side differences

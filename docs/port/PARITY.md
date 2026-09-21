@@ -4,7 +4,8 @@
 OpenMila copies Mila's features rather than inventing new ones, so this file is
 the list of what Mila does and where each port stands. It is measured against
 upstream **v1.9.5-beta.2** (see `UPSTREAM_VERSION`); OpenMila's own version is
-`1.9.5+port.0-dev`.
+`1.9.5-beta.2+port.1` (`AppIdentity.version`, which packaging and the
+updater both read).
 
 Status values, and what each one claims:
 
