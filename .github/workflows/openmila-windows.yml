@@ -76,6 +76,11 @@ env:
 jobs:
   windows:
     runs-on: windows-2025
+    # contents: write for one thing: force-pushing the ci-screenshots branch
+    # from a push to main. A pull request run gets a read-only token from
+    # GitHub regardless of what is asked for here.
+    permissions:
+      contents: write
     # A full run (core, tests, app, zip) is about an hour; a hung job at the
     # old two-hour limit cost two hours of Windows minutes, which bill double.
     timeout-minutes: 75
@@ -244,6 +249,39 @@ jobs:
           path: ${{ runner.temp }}\shots\*
           if-no-files-found: ignore
           retention-days: 14
+
+      # The images also go to a single-commit side branch, because the
+      # artifact store is served from a host some networks cannot reach and
+      # the whole point of the capture is that someone can look at it. Only on
+      # a push to main: a pull request's token is read-only anyway, and a
+      # branch that only ever holds the latest main build is what is wanted.
+      - name: Publish the screenshots to the ci-screenshots branch
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        timeout-minutes: 5
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.SCREENSHOTS_TOKEN || github.token }}
+        run: |
+          $shots = "$env:RUNNER_TEMP\shots"
+          if (-not (Test-Path "$shots\window.png")) { Write-Host "nothing captured"; exit 0 }
+          $work = "$env:RUNNER_TEMP\shots-branch"
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          Copy-Item "$shots\*.png", "$shots\openmila.log" $work -ErrorAction SilentlyContinue
+          Set-Content -Path "$work\README.md" -Value @(
+            "# What the Windows build draws",
+            "",
+            "Captured by the OpenMila Windows workflow on the runner, from commit ${{ github.sha }}.",
+            "One commit, replaced on every push to main; not history, just the latest look."
+          )
+          Push-Location $work
+          git init -q -b ci-screenshots
+          git config user.name "openmila-ci"
+          git config user.email "openmila-ci@users.noreply.github.com"
+          git add -A
+          git commit -q -m "screenshots from ${{ github.sha }}"
+          git push -q --force "https://x-access-token:$env:GH_TOKEN@github.com/${{ github.repository }}.git" ci-screenshots
+          Pop-Location
+          Write-Host "pushed to ci-screenshots"
 
       - name: Upload the build log on failure
         if: failure()
