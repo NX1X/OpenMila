@@ -163,9 +163,33 @@ Type: files; Name: "{userstartup}\{#MyAppName}.lnk"
 Type: filesandordirs; Name: "{app}\PythonRuntime"
 
 [Run]
+; The Windows App Runtime, before anything can be launched.
+;
+; The user interface is WinUI, and WinUI needs Microsoft's Windows App Runtime
+; on the machine. The application carries the bootstrap DLL that LOOKS for that
+; runtime, which is not the same thing as having it: without this step
+; openmila.exe starts and exits again immediately, which is exactly what the
+; first installed build did. The redistributable ships in the payload, is
+; verified by digest at packaging time, and installs for the current user, so
+; this step never raises an administrator prompt. It is idempotent: on a
+; machine that already has the runtime it returns at once.
+Filename: "{app}\WindowsAppRuntimeInstall-x64.exe"; Parameters: "--quiet"; StatusMsg: "Installing the Windows App Runtime..."; Flags: waituntilterminated runascurrentuser; Check: NeedsAppRuntime
+
 Filename: "{app}\{#MyExe}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+// Whether the Windows App Runtime redistributable has to run.
+//
+// Always true today: asking Windows whether a framework package is registered
+// from an unprivileged Inno script means PackageManager through COM, which is
+// more moving parts than running an installer that already exits immediately
+// when there is nothing to do. This function exists so the decision has one
+// place to live if that ever changes.
+function NeedsAppRuntime(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\WindowsAppRuntimeInstall-x64.exe'));
+end;
+
 // Uninstall is deliberately conservative: it takes the application away and
 // leaves everything the user made. Two things need code rather than a section.
 //

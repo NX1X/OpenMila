@@ -54,6 +54,17 @@ The portable zip still ships and still works: unblock it, extract it anywhere,
 run `openmila.exe`. It writes no registry keys, creates no shortcuts and has
 nothing to uninstall - deleting the folder is the uninstall.
 
+### What the installer sets up besides the app
+
+The user interface is built on WinUI, which needs Microsoft's **Windows App
+Runtime** on the machine. The installer carries that redistributable and runs
+it for your user, so there is still no administrator prompt, and it does
+nothing on a machine that already has it.
+
+If you use the portable zip instead, run `WindowsAppRuntimeInstall-x64.exe`
+from the zip once before starting `openmila.exe`. Without it the app starts and
+exits again immediately. `openmila-cli.exe` does not need it.
+
 ### Upgrade
 
 Run the new installer. It replaces the installed version in place, keeps your

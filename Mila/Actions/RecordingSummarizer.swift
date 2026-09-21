@@ -605,8 +605,8 @@ final class RecordingSummarizer: ObservableObject {
     ///
     /// Modified by NX1X for OpenMila; see CHANGES.md. The prompt asks for the
     /// summary as plain text followed by `###ACTION_ITEMS###`, and a large
-    /// model obliges. A small local one (qwen2.5:3b through Ollama, seen on
-    /// 2026-09-21) labels the first section too, so the saved summary began
+    /// model obliges. A small local one through Ollama (seen on 2026-09-21)
+    /// labels the first section too, so the saved summary began
     /// with a literal `###SUMMARY###` line. Only a whole first line made of a
     /// hash-delimited upper-case label is removed, so prose, Markdown headings
     /// with real words and anything containing the text of the summary itself

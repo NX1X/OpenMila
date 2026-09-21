@@ -193,6 +193,22 @@ jobs:
         timeout-minutes: 45
         run: .\scripts\port\build-windows.ps1 -Prefix "$env:GITHUB_WORKSPACE\whisper-prefix" -App
 
+      # The user interface is WinUI, which needs Microsoft's Windows App
+      # Runtime present before openmila.exe can start at all. Packaging runs
+      # the app to prove the payload works, so the runner needs it too. Pinned
+      # to the version swift-winui targets and checked against its digest.
+      - name: Install the Windows App Runtime
+        timeout-minutes: 10
+        run: |
+          $url = "https://aka.ms/windowsappsdk/1.5/1.5.240205001-preview1/windowsappruntimeinstall-x64.exe"
+          $expected = "b906084876a0875d3401a7b4dc5a5a6da24ad7eb4a30ed8c05aa88085411817c"
+          $installer = "$env:RUNNER_TEMP\WindowsAppRuntimeInstall-x64.exe"
+          curl.exe -fsSL --retry 4 -o $installer $url
+          $actual = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $expected) { throw "the Windows App Runtime download has digest $actual, expected $expected" }
+          & $installer --quiet
+          Write-Host "Windows App Runtime installed"
+
       - name: Package the portable zip
         if: github.event_name == 'push' || inputs.app
         timeout-minutes: 20

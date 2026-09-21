@@ -111,7 +111,8 @@ final class FileTranscriberTwinTests: XCTestCase {
 
 /// A summary heading a small local model adds on its own.
 ///
-/// Found by running the real summariser against Ollama with qwen2.5:3b: the
+/// Found by running the real summariser against a small local model through
+/// Ollama: the
 /// prompt asks for plain text then `###ACTION_ITEMS###`, and the model labelled
 /// the first section as well, so the stored summary started with a literal
 /// `###SUMMARY###`.

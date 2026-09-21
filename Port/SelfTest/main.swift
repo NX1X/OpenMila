@@ -151,7 +151,7 @@ func run() async {
             llm.tool = .openaiCompatible
             llm.openAIProvider = .ollamaLocal
             llm.openAIBaseURL = option("--endpoint", in: args) ?? OpenAIProvider.ollamaLocal.baseURL
-            llm.openAIModelName = option("--model", in: args) ?? "qwen2.5:3b"
+            llm.openAIModelName = option("--model", in: args) ?? "mistral"
             describedProvider = "Ollama at \(llm.openAIBaseURL), model \(llm.openAIModelName)"
         } else {
             llm.tool = .claude
