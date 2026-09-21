@@ -1,0 +1,55 @@
+# Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
+#
+# OpenMila tracks island-io/mila (see UPSTREAM_VERSION and CLAUDE.md's merge
+# notes). Nothing in the port build checks whether upstream has moved past the
+# pinned tag, so a new upstream release could sit unnoticed indefinitely. This
+# is a read-only check: it builds nothing and changes nothing, it only fails
+# loudly (a red scheduled run, which GitHub emails to the repository's
+# watchers) when island-io/mila's latest release tag is no longer the one
+# recorded in UPSTREAM_VERSION.
+name: Upstream watch
+
+on:
+  schedule:
+    # Weekly, offset from the other Monday-morning schedules in this repo.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-watch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /UPSTREAM_VERSION
+          sparse-checkout-cone-mode: false
+
+      - name: Compare UPSTREAM_VERSION against island-io/mila's latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pinned="$(tr -d '[:space:]' < UPSTREAM_VERSION)"
+          # Not /releases/latest: that endpoint skips pre-releases, and
+          # UPSTREAM_VERSION is routinely pinned to a beta (see its current
+          # value). /releases is newest-first and includes pre-releases.
+          latest="$(gh api repos/island-io/mila/releases --jq '.[0].tag_name')"
+          {
+            echo "pinned (UPSTREAM_VERSION): $pinned"
+            echo "latest upstream release:  $latest"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$pinned" != "$latest" ]; then
+            echo "::warning::island-io/mila has released $latest; OpenMila is pinned to $pinned. Review the diff and bump UPSTREAM_VERSION after merging it."
+            exit 1
+          fi
+          echo "up to date with upstream's latest release"

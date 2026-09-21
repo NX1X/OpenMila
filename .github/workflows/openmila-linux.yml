@@ -1,18 +1,52 @@
 # Copyright 2026 NX1X. Licensed under the Apache License, Version 2.0.
 #
-# OpenMila's Linux pipeline, run through Dagger (ci/dagger). The same
-# `dagger call check` runs on a laptop; this file only installs the pinned
-# Dagger CLI and calls it.
-name: OpenMila Linux
-
+# OpenMila's Linux pipeline, run through Dagger (ci/dagger). Every step below
+# calls the same `dagger call stage --name=<x>` a developer runs locally; CI
+# just runs the stages one at a time instead of through `dagger call check`,
+# so a red run points at the one stage that broke instead of a single
+# multi-minute log a human has to search.
+#
 # A branch with an open pull request was building twice, once for the push and
 # once for the pull request. Pushes are watched on main only; everything else
 # is covered by its pull request.
+name: OpenMila Linux
+
 on:
   push:
     branches: [main]
-    paths-ignore: ["docs/**", "docs-internal/**", "**/*.md"]
+    paths-ignore:
+      - "docs/**"
+      - "docs-internal/**"
+      - "**/*.md"
+      # Upstream files the port does NOT compile. Mila/ and MilaTests/ are
+      # deliberately absent: the port builds both, so a change there changes
+      # this pipeline.
+      - "MilaUITests/**"
+      - "MilaMCP/**"
+      - "RELEASE_NOTES/**"
+      - "project.yml"
+      - "docker/**"
+      - "brand/**"
+      - ".cursor/**"
+      - "bugbot-rules/**"
+      - "skills/**"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "docs-internal/**"
+      - "**/*.md"
+      # Upstream files the port does NOT compile. Mila/ and MilaTests/ are
+      # deliberately absent: the port builds both, so a change there changes
+      # this pipeline.
+      - "MilaUITests/**"
+      - "MilaMCP/**"
+      - "RELEASE_NOTES/**"
+      - "project.yml"
+      - "docker/**"
+      - "brand/**"
+      - ".cursor/**"
+      - "bugbot-rules/**"
+      - "skills/**"
   workflow_dispatch:
 
 permissions:
@@ -20,7 +54,9 @@ permissions:
 
 concurrency:
   group: openmila-linux-${{ github.ref }}
-  cancel-in-progress: true
+  # A second push to main (or a tag) must not cancel a run already building
+  # main; only superseded pull request runs are worth cancelling.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 env:
   DAGGER_VERSION: "0.21.9"
@@ -31,7 +67,9 @@ env:
 jobs:
   linux:
     runs-on: ubuntu-24.04
-    # A full run is about 15 minutes.
+    # A full run is about 15 minutes; the per-stage timeouts below are the
+    # real backstop against a wedged stage, this is the backstop against the
+    # whole job wedging some other way.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,10 +101,47 @@ jobs:
           tar xzf "$file" dagger
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
+      # Each step below is `dagger call stage --name=<x>`, the exact command
+      # ci/dagger/main.go documents for a developer running the same stage on
+      # a laptop. Splitting `dagger call check` into these means a failure
+      # names its stage in the Actions UI instead of hiding in one long
+      # `--progress=plain` log; the Dagger engine started by the first call
+      # stays up for the rest of the job, so later stages reuse its cache
+      # volumes and its memoized whisper-model download, not repeat them.
+      - name: Build whisper.cpp at the pinned commit
+        timeout-minutes: 10
+        run: dagger call --progress=plain stage --name=whisper
+
+      - name: Test upstream packages (MilaKit, TranscriptionCore)
+        timeout-minutes: 5
+        run: dagger call --progress=plain stage --name=packages
+
+      - name: Test the platform shims
+        timeout-minutes: 5
+        run: dagger call --progress=plain stage --name=shims
+
+      - name: Build the core and run upstream's unit tests
+        timeout-minutes: 15
+        run: dagger call --progress=plain stage --name=core
+
+      - name: Test the port modules (recording, stretch, updater, Linux platform)
+        timeout-minutes: 5
+        run: dagger call --progress=plain stage --name=port
+
+      - name: Build openmila-cli and openmila-mcp
+        timeout-minutes: 5
+        run: dagger call --progress=plain stage --name=cli
+
+      - name: Run the end-to-end transcription fixtures
+        timeout-minutes: 5
+        run: dagger call --progress=plain stage --name=e2e
+
       # The desktop app is over half the pipeline's time, so a pull request
-      # runs everything else and a push to main adds the app.
-      - name: Run the pipeline (dagger call check)
-        # The pipeline is about 15 minutes with the app, 8 without; this is the
-        # backstop for a stage that wedges rather than fails.
-        timeout-minutes: 40
-        run: dagger call --progress=plain check --with-app=${{ github.event_name == 'push' }}
+      # runs everything else and a push to main adds this stage. `ci/run.sh
+      # all-with-app` runs this stage before e2e; here it runs last on
+      # purpose, so a push that would fail e2e or an earlier stage fails
+      # there first, before paying for the app build.
+      - name: Build the desktop app
+        if: github.event_name == 'push'
+        timeout-minutes: 20
+        run: dagger call --progress=plain stage --name=app

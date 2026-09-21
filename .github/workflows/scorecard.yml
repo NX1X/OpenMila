@@ -11,7 +11,8 @@ permissions: read-all
 
 concurrency:
   group: scorecard-${{ github.ref }}
-  cancel-in-progress: true
+  # A second push to main must not cancel a scan already running against main.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   analysis:

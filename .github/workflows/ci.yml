@@ -3,17 +3,45 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      # Port-only: Mila.xcodeproj never sees these, and Package.swift itself
+      # refuses to build on macOS (see Package.swift's `#error`).
+      - "Port/**"
+      - "ci/**"
+      - "packaging/**"
+      - "scripts/port/**"
+      - "diarization/**"
+      - ".github/workflows/openmila-linux.yml"
+      - ".github/workflows/openmila-windows.yml"
+      - "docs/**"
+      - "docs-internal/**"
+      - "**/*.md"
   pull_request:
     branches: [main]
+    paths-ignore:
+      # Port-only: Mila.xcodeproj never sees these, and Package.swift itself
+      # refuses to build on macOS (see Package.swift's `#error`).
+      - "Port/**"
+      - "ci/**"
+      - "packaging/**"
+      - "scripts/port/**"
+      - "diarization/**"
+      - ".github/workflows/openmila-linux.yml"
+      - ".github/workflows/openmila-windows.yml"
+      - "docs/**"
+      - "docs-internal/**"
+      - "**/*.md"
 
 permissions:
   contents: read
 
 # Avoid stacking redundant runs on the same branch — newer pushes cancel
-# in-flight runs of the same workflow.
+# in-flight pull request runs. A push to main is never cancelled: it is the
+# signal that main itself is green, and macOS minutes here are the scarcest
+# runner this repository has.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   build-and-test:

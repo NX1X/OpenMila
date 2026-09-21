@@ -3,17 +3,42 @@ name: CodeQL
 on:
   push:
     branches: [main]
+    paths-ignore:
+      # Same build as ci.yml (Mila.xcodeproj): port-only paths never reach it.
+      - "Port/**"
+      - "ci/**"
+      - "packaging/**"
+      - "scripts/port/**"
+      - "diarization/**"
+      - ".github/workflows/openmila-linux.yml"
+      - ".github/workflows/openmila-windows.yml"
+      - "docs/**"
+      - "docs-internal/**"
+      - "**/*.md"
   pull_request:
     branches: [main]
+    paths-ignore:
+      # Same build as ci.yml (Mila.xcodeproj): port-only paths never reach it.
+      - "Port/**"
+      - "ci/**"
+      - "packaging/**"
+      - "scripts/port/**"
+      - "diarization/**"
+      - ".github/workflows/openmila-linux.yml"
+      - ".github/workflows/openmila-windows.yml"
+      - "docs/**"
+      - "docs-internal/**"
+      - "**/*.md"
   schedule:
     # Weekly full scan (Mondays 03:27 UTC) so the latest CodeQL queries
     # run against main even when there are no PRs.
     - cron: '27 3 * * 1'
 
-# Avoid stacking redundant runs on the same branch.
+# Avoid stacking redundant runs on the same branch. A push to main is never
+# cancelled, so a security scan already running against main always finishes.
 concurrency:
   group: codeql-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   analyze:
