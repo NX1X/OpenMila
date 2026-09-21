@@ -40,6 +40,17 @@ nobody has run any of it on a Windows desktop yet. Treat it as untested.
 [`docs/port/PARITY.md`](docs/port/PARITY.md) tracks every Mila feature with a
 per-system status and the evidence behind it, including what is still missing.
 
+## Architecture
+
+![OpenMila architecture: the SwiftCrossUI app layer, the PlatformKit protocol seam over Linux and Windows implementations, the shim modules, the reused Mila core, whisper.cpp and diarization, and the external surfaces](docs/architecture.png)
+
+Top to bottom: the app layer is new; PlatformKit and its two platform
+implementations are new; the shim modules are twins that let upstream Apple
+imports compile unchanged; the core engine, MilaKit, TranscriptionCore,
+whisper.cpp and the diarization runtime are reused from Mila unchanged (with a
+few small twins called out); and the bottom row is what the app talks to
+outside the process. Full source: [docs/architecture.drawio](docs/architecture.drawio).
+
 ## Credits
 
 Mila was created by [Uri Harduf](https://github.com/urisland) at

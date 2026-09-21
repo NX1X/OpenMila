@@ -32,13 +32,17 @@ public enum WindowsWindowTitles {
         let box = TitleBox()
         let context = Unmanaged.passUnretained(box).toOpaque()
         _ = EnumWindows({ window, parameter in
-            guard let window,
-                  let raw = UnsafeMutableRawPointer(bitPattern: UInt(bitPattern: parameter))
+            // LPARAM is a signed pointer-sized integer, so the pointer comes
+            // back through Int rather than through UInt: on Windows the
+            // unsigned round trip has no exact overload.
+            guard let window, let raw = UnsafeMutableRawPointer(bitPattern: Int(parameter))
             else { return true }
             let box = Unmanaged<TitleBox>.fromOpaque(raw).takeUnretainedValue()
             // false stops the enumeration, which is what the cap wants.
             guard box.titles.count < limit else { return false }
-            guard IsWindowVisible(window) else { return true }
+            // WindowsBool is its own type, not Bool: compare rather than
+            // assume a conversion the overlay does not offer.
+            guard IsWindowVisible(window) != false else { return true }
             let length = GetWindowTextLengthW(window)
             guard length > 0 else { return true }
             var buffer = [WCHAR](repeating: 0, count: Int(length) + 1)

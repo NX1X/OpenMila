@@ -1,0 +1,238 @@
+<mxfile host="app.diagrams.net" version="24.7.17">
+  <diagram id="openmila-architecture" name="Architecture">
+    <mxGraphModel dx="1600" dy="1200" grid="0" gridSize="10" guides="1" connect="1" arrows="0" fold="1" page="0" pageScale="1" pageWidth="1900" pageHeight="2300" math="0" shadow="0" background="#FFFFFF" defaultFontFamily="Helvetica">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ============ EDGES (declared before vertices for z-order) ============ -->
+
+        <mxCell id="e-app-platformkit" edge="1" parent="1" source="appLayerBg" target="platformKitBox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#0057D8;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontFamily=Helvetica;fontSize=14;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-app-linux" edge="1" parent="1" source="appGTKChip" target="linuxBox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#0057D8;exitX=0.5;exitY=1;entryX=0.3;entryY=0;fontFamily=Helvetica;fontSize=14;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-app-windows" edge="1" parent="1" source="appWinUIChip" target="windowsBox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#0057D8;exitX=0.5;exitY=1;entryX=0.7;entryY=0;fontFamily=Helvetica;fontSize=14;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-linux-seam" value="implements" edge="1" parent="1" source="linuxBox" target="platformKitBox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=0;dashed=1;strokeWidth=2;strokeColor=#0057D8;fontColor=#0057D8;exitX=0.25;exitY=0;entryX=0.2;entryY=1;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-windows-seam" value="implements" edge="1" parent="1" source="windowsBox" target="platformKitBox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=0;dashed=1;strokeWidth=2;strokeColor=#0057D8;fontColor=#0057D8;exitX=0.75;exitY=0;entryX=0.8;entryY=1;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-core-shims" value="so upstream code compiles unchanged" edge="1" parent="1" source="milaCoreChip" target="shimsBg" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#34C759;fontColor=#1E7A38;exitX=0.5;exitY=0;entryX=0.5;entryY=1;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry x="-0.4" relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-core-milakit" edge="1" parent="1" source="milaCoreChip" target="milaKitChip" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#34C759;exitX=0;exitY=0.5;entryX=1;entryY=0.5;fontFamily=Helvetica;fontSize=14;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-core-transcore" edge="1" parent="1" source="milaCoreChip" target="transcriptionCoreChip" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#34C759;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontFamily=Helvetica;fontSize=14;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-transcore-whisper" value="wraps" edge="1" parent="1" source="transcriptionCoreChip" target="whisperBg" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#34C759;fontColor=#1E7A38;exitX=0.4;exitY=1;entryX=0.75;entryY=0;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry x="-0.3" relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-core-diarization" value="diarization" edge="1" parent="1" source="milaCoreChip" target="diarizationBg" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#34C759;fontColor=#34C759;exitX=0.25;exitY=1;entryX=0;entryY=0.5;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="850" y="1490" />
+              <mxPoint x="530" y="1490" />
+              <mxPoint x="530" y="1890" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e-milakit-watched" value="folder watch" edge="1" parent="1" source="milaKitChip" target="watchedBox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#34C759;fontColor=#34C759;exitX=0.2;exitY=1;entryX=0.5;entryY=0;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="400" y="1950" />
+              <mxPoint x="190" y="1950" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-milakit-mcp" value="tool handlers" edge="1" parent="1" source="milaKitChip" target="mcpBox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#34C759;fontColor=#34C759;exitX=0.4;exitY=1;entryX=0.5;entryY=0;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="460" y="1990" />
+              <mxPoint x="570" y="1990" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-core-remote" edge="1" parent="1" source="milaCoreChip" target="remoteBox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#34C759;exitX=0.3;exitY=1;entryX=0.5;entryY=0;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1340" y="1490" />
+              <mxPoint x="1340" y="1870" />
+              <mxPoint x="950" y="1870" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-core-llm" edge="1" parent="1" source="milaCoreChip" target="llmBox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#34C759;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1400" y="1490" />
+              <mxPoint x="1400" y="1920" />
+              <mxPoint x="1330" y="1920" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-core-obsidian" edge="1" parent="1" source="milaCoreChip" target="obsidianBox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#34C759;exitX=0.7;exitY=1;entryX=0.5;entryY=0;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1460" y="1490" />
+              <mxPoint x="1460" y="1970" />
+              <mxPoint x="1710" y="1970" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ============ VERTICES ============ -->
+
+        <!-- Title + subtitle -->
+        <mxCell id="titleText" value="OpenMila architecture" style="text;html=1;align=left;verticalAlign=top;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=28;fontStyle=1;fontColor=#121417;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="900" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitleText" value="How the Linux and Windows port fits together: a reused engine underneath, a small shim layer, and new platform code on top" style="text;html=1;align=left;verticalAlign=top;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=15;fontColor=#8C8C94;" vertex="1" parent="1">
+          <mxGeometry x="40" y="62" width="1180" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legendBg" value="Legend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F6F8;strokeColor=#8C8C94;align=left;verticalAlign=top;spacingLeft=16;spacingTop=8;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#121417;" vertex="1" parent="1">
+          <mxGeometry x="1440" y="20" width="420" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="legendSwatch1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF7EE;strokeColor=#34C759;strokeWidth=2;fontFamily=Helvetica;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="54" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="legendLabel1" value="Reused from Mila, unchanged" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontColor=#121417;" vertex="1" parent="1">
+          <mxGeometry x="1488" y="48" width="360" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="legendSwatch2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9500;strokeWidth=2;fontFamily=Helvetica;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="84" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="legendLabel2" value="Port twin (same behavior, new implementation)" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontColor=#121417;" vertex="1" parent="1">
+          <mxGeometry x="1488" y="78" width="370" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="legendSwatch3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F2FF;strokeColor=#0057D8;strokeWidth=2;fontFamily=Helvetica;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="114" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="legendLabel3" value="New in the port" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontColor=#121417;" vertex="1" parent="1">
+          <mxGeometry x="1488" y="108" width="360" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="legendSwatch4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F6F8;strokeColor=#8C8C94;strokeWidth=2;dashed=1;fontFamily=Helvetica;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="144" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="legendLabel4" value="External / third-party" style="text;html=1;align=left;verticalAlign=middle;strokeColor=none;fillColor=none;fontFamily=Helvetica;fontSize=14;fontColor=#121417;" vertex="1" parent="1">
+          <mxGeometry x="1488" y="138" width="360" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- Row 1: App layer -->
+        <mxCell id="appLayerBg" value="&lt;b&gt;SwiftCrossUI App layer&lt;/b&gt;, Port/App &amp;middot; &lt;b&gt;new in the port&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#E6F2FF;strokeColor=#0057D8;strokeWidth=2;align=left;verticalAlign=top;spacingLeft=16;spacingTop=12;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#0057D8;" vertex="1" parent="1">
+          <mxGeometry x="320" y="190" width="1260" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="appSharedChip" value="Shared app code: AppModel &amp;middot; CoreBridge &amp;middot; Theme &amp;middot; Views (Home, Settings, RecordingDetail, About)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEBFF;strokeColor=#0057D8;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="420" y="260" width="1060" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="appGTKChip" value="GTK 4 backend (Linux)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEBFF;strokeColor=#0057D8;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#121417;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="420" y="335" width="510" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="appWinUIChip" value="WinUI backend (Windows)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEBFF;strokeColor=#0057D8;strokeWidth=2;fontFamily=Helvetica;fontSize=15;fontColor=#121417;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="970" y="335" width="510" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Row 2: PlatformKit seam -->
+        <mxCell id="platformKitBox" value="&lt;b&gt;PlatformKit&lt;/b&gt;, protocol seam &amp;middot; Port/PlatformKit &amp;middot; &lt;b&gt;new in the port&lt;/b&gt;&lt;br&gt;&lt;br&gt;Defines the protocols each OS must satisfy: audio capture &amp;middot; hotkeys &amp;middot; text injection &amp;middot; secret storage &amp;middot; folder watch &amp;middot; notifications &amp;middot; sleep inhibit &amp;middot; window titles" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#E6F2FF;strokeColor=#0057D8;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;spacingLeft=16;spacingRight=16;" vertex="1" parent="1">
+          <mxGeometry x="580" y="460" width="740" height="170" as="geometry" />
+        </mxCell>
+
+        <!-- Row 3: Platform implementations -->
+        <mxCell id="linuxBox" value="&lt;b&gt;LinuxPlatform&lt;/b&gt;&lt;br&gt;Port/LinuxPlatform &amp;middot; &lt;b&gt;new in the port&lt;/b&gt;&lt;br&gt;&lt;br&gt;&amp;#8226; miniaudio, mic &amp;amp; mixed capture&lt;br&gt;&amp;#8226; PipeWire, per-app audio (pw-record --target)&lt;br&gt;&amp;#8226; XDG portals, GlobalShortcuts, RemoteDesktop&lt;br&gt;&amp;#8226; X11 / XWayland, hotkeys, window titles&lt;br&gt;• AT-SPI accessibility bus, window titles on Wayland&lt;br&gt;&amp;#8226; libsecret, Secret Service keyring&lt;br&gt;&amp;#8226; logind / systemd-inhibit, sleep guard&lt;br&gt;&amp;#8226; inotify, watched folders" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#E6F2FF;strokeColor=#0057D8;strokeWidth=2;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;fontFamily=Helvetica;fontSize=14;fontColor=#121417;" vertex="1" parent="1">
+          <mxGeometry x="320" y="670" width="610" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="windowsBox" value="&lt;b&gt;WindowsPlatform&lt;/b&gt;&lt;br&gt;Port/WindowsPlatform &amp;middot; &lt;b&gt;new in the port&lt;/b&gt;&lt;br&gt;&lt;br&gt;&amp;#8226; miniaudio (WASAPI backend), mic capture&lt;br&gt;&amp;#8226; WASAPI process loopback, per-app audio&lt;br&gt;&amp;#8226; RegisterHotKey, global hotkeys&lt;br&gt;&amp;#8226; SendInput, paste at cursor&lt;br&gt;&amp;#8226; DPAPI, credential storage&lt;br&gt;&amp;#8226; ReadDirectoryChangesW, watched folders&lt;br&gt;&amp;#8226; EnumWindows, window titles" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#E6F2FF;strokeColor=#0057D8;strokeWidth=2;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;fontFamily=Helvetica;fontSize=14;fontColor=#121417;" vertex="1" parent="1">
+          <mxGeometry x="970" y="670" width="610" height="340" as="geometry" />
+        </mxCell>
+
+        <!-- Row 4: Shims -->
+        <mxCell id="shimsBg" value="&lt;b&gt;Shim modules&lt;/b&gt;, Port/Shims &amp;middot; &lt;b&gt;port twin&lt;/b&gt;: same module names as Apple's frameworks, open-source backends underneath, so upstream files compile unchanged" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFF3E0;strokeColor=#FF9500;strokeWidth=2;align=left;verticalAlign=top;spacingLeft=16;spacingTop=12;fontFamily=Helvetica;fontSize=15;fontStyle=1;fontColor=#B36B00;" vertex="1" parent="1">
+          <mxGeometry x="460" y="1050" width="980" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="shimCombine" value="Combine &amp;rarr; OpenCombine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE8C7;strokeColor=#FF9500;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="480" y="1110" width="215" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="shimOSLog" value="OSLog / os &amp;rarr; swift-log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE8C7;strokeColor=#FF9500;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="720" y="1110" width="215" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="shimCrypto" value="CryptoKit &amp;rarr; swift-crypto" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE8C7;strokeColor=#FF9500;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="960" y="1110" width="215" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="shimOther" value="Accelerate &amp;rarr; vDSP stub&lt;br&gt;SwiftUI &amp;rarr; Color stub" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE8C7;strokeColor=#FF9500;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="1110" width="215" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Row 5: reused Mila core -->
+        <mxCell id="milaKitChip" value="&lt;b&gt;MilaKit&lt;/b&gt;&lt;br&gt;Packages/MilaKit&lt;br&gt;&lt;i&gt;reused from Mila unchanged&lt;/i&gt;&lt;br&gt;&lt;br&gt;Shared engine types, store reader, MCP tool handlers" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#EAF7EE;strokeColor=#34C759;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;spacingLeft=10;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="320" y="1260" width="380" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="milaCoreChip" value="&lt;b&gt;Mila core&lt;/b&gt;&lt;br&gt;Mila/ (upstream source tree)&lt;br&gt;&lt;i&gt;reused from Mila unchanged&lt;/i&gt;&lt;br&gt;&lt;br&gt;Recording, transcription, dictation, AI features, library" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#EAF7EE;strokeColor=#34C759;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;spacingLeft=10;spacingRight=10;spacingBottom=60;" vertex="1" parent="1">
+          <mxGeometry x="740" y="1260" width="460" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="coreTwinsBadge" value="+ Port/CoreTwins: small twins for Apple-only files (Keychain, SystemCapabilities, FileTranscriber, VoiceMemosLibrary...), &lt;b&gt;port twin&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9500;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="1385" width="250" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="transcriptionCoreChip" value="&lt;b&gt;TranscriptionCore&lt;/b&gt;&lt;br&gt;Packages/TranscriptionCore&lt;br&gt;&lt;i&gt;reused from Mila unchanged&lt;/i&gt;&lt;br&gt;&lt;br&gt;whisper.cpp Swift wrapper, Silero VAD" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#EAF7EE;strokeColor=#34C759;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;spacingLeft=10;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="1260" width="340" height="210" as="geometry" />
+        </mxCell>
+
+        <!-- Row 6: whisper.cpp -->
+        <mxCell id="whisperBg" value="&lt;b&gt;whisper.cpp&lt;/b&gt; (pinned submodule) &amp;middot; &lt;b&gt;reused from Mila unchanged&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#EAF7EE;strokeColor=#34C759;strokeWidth=2;align=left;verticalAlign=top;spacingLeft=16;spacingTop=12;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#1E7A38;" vertex="1" parent="1">
+          <mxGeometry x="580" y="1510" width="740" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="probeChip" value="GPU probe: VulkanAvailability, &lt;b&gt;new in the port&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F2FF;strokeColor=#0057D8;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="790" y="1580" width="320" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cpuChip" value="CPU backend&lt;br&gt;always available" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF7EE;strokeColor=#34C759;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="620" y="1670" width="310" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="vulkanChip" value="Vulkan backend&lt;br&gt;-DGGML_VULKAN=ON, real GPU only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF7EE;strokeColor=#34C759;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="960" y="1670" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e-probe-cpu" value="software Vulkan / none" edge="1" parent="1" source="probeChip" target="cpuChip" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#0057D8;fontColor=#0057D8;exitX=0.25;exitY=1;entryX=0.5;entryY=0;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-probe-vulkan" value="real GPU found" edge="1" parent="1" source="probeChip" target="vulkanChip" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;strokeColor=#0057D8;fontColor=#0057D8;exitX=0.75;exitY=1;entryX=0.5;entryY=0;fontFamily=Helvetica;fontSize=14;labelBackgroundColor=#FFFFFF;jettySize=auto;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Row 7: diarization -->
+        <mxCell id="diarizationBg" value="&lt;b&gt;Diarization runtime&lt;/b&gt; &amp;middot; &lt;b&gt;reused from Mila unchanged&lt;/b&gt;&lt;br&gt;&lt;br&gt;python-build-standalone + pyannote (torch fetched on first enable)&lt;br&gt;build-bundle-linux.sh / build-bundle-windows.ps1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#EAF7EE;strokeColor=#34C759;strokeWidth=2;align=left;verticalAlign=top;spacingLeft=16;spacingTop=12;fontFamily=Helvetica;fontSize=14;fontColor=#121417;" vertex="1" parent="1">
+          <mxGeometry x="580" y="1810" width="740" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="diarizationBadge" value="port twin: Linux/Windows torch wheel URLs added to DiarizationBootstrap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9500;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="760" y="1890" width="520" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Row 8: external surfaces -->
+        <mxCell id="watchedBox" value="&lt;b&gt;Watched folders&lt;/b&gt;&lt;br&gt;&lt;i&gt;external / third-party&lt;/i&gt;&lt;br&gt;&lt;br&gt;Import existing audio; iPhone Voice Memos sync as a synced folder; inotify (Linux) / ReadDirectoryChangesW (Windows)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#F5F6F8;strokeColor=#8C8C94;strokeWidth=2;dashed=1;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;spacingLeft=10;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="2010" width="300" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="mcpBox" value="&lt;b&gt;MCP server helper&lt;/b&gt;&lt;br&gt;openmila-mcp, Port/MCP &amp;middot; &lt;b&gt;port twin&lt;/b&gt;&lt;br&gt;&lt;br&gt;stdio JSON-RPC to AI tools (e.g. Claude Code); consent gate in Settings" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFF3E0;strokeColor=#FF9500;strokeWidth=2;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;spacingLeft=10;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="420" y="2010" width="300" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="remoteBox" value="&lt;b&gt;Remote transcription endpoint&lt;/b&gt;&lt;br&gt;&lt;i&gt;external / third-party, optional&lt;/i&gt;&lt;br&gt;&lt;br&gt;Any OpenAI-compatible server you run yourself, in place of local whisper.cpp" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#F5F6F8;strokeColor=#8C8C94;strokeWidth=2;dashed=1;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;spacingLeft=10;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="800" y="2010" width="300" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="llmBox" value="&lt;b&gt;LLM provider&lt;/b&gt;&lt;br&gt;&lt;i&gt;external / third-party&lt;/i&gt;&lt;br&gt;&lt;br&gt;Claude, Cursor or Gemini CLI (managed install, checksum-verified); any OpenAI-compatible endpoint; fully local Ollama" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#F5F6F8;strokeColor=#8C8C94;strokeWidth=2;dashed=1;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;spacingLeft=10;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="2010" width="300" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="obsidianBox" value="&lt;b&gt;Obsidian export&lt;/b&gt;&lt;br&gt;&lt;i&gt;external / third-party&lt;/i&gt;&lt;br&gt;&lt;br&gt;Export transcripts to a vault, sync with git; feature reused from Mila unchanged" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#F5F6F8;strokeColor=#8C8C94;strokeWidth=2;dashed=1;fontFamily=Helvetica;fontSize=14;fontColor=#121417;align=center;verticalAlign=middle;spacingLeft=10;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="1560" y="2010" width="300" height="230" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
