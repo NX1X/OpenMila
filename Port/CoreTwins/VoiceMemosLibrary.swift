@@ -23,13 +23,55 @@ struct VoiceMemosLibrary {
         self.recordingsDirectory = recordingsDirectory
     }
 
-    /// Suggested starting point for the folder picker.
+    /// Suggested starting point for the folder picker, and what Settings
+    /// offers when the user has not chosen anything yet. Upstream has one
+    /// answer here (the folder iCloud syncs Voice Memos into); off a Mac there
+    /// is no such folder, so the port proposes one rather than leaving the
+    /// field empty - an empty field is how a user ends up watching their whole
+    /// home directory.
+    ///
+    /// `XDG_MUSIC_DIR` first, because a localised desktop calls that directory
+    /// something other than "Music" and Foundation does not read the user's
+    /// XDG config.
     static var defaultRecordingsDirectory: URL {
         let fm = FileManager.default
+        if let music = xdgMusicDirectory, fm.fileExists(atPath: music.path) {
+            return music.appendingPathComponent("Recordings", isDirectory: true)
+        }
         if let music = fm.urls(for: .musicDirectory, in: .userDomainMask).first, fm.fileExists(atPath: music.path) {
             return music.appendingPathComponent("Recordings", isDirectory: true)
         }
         return fm.homeDirectoryForCurrentUser.appendingPathComponent("Recordings", isDirectory: true)
+    }
+
+    /// `XDG_MUSIC_DIR` from the environment, else from `user-dirs.dirs`, where
+    /// it is written as `XDG_MUSIC_DIR="$HOME/Musik"`.
+    static var xdgMusicDirectory: URL? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        if let value = ProcessInfo.processInfo.environment["XDG_MUSIC_DIR"], !value.isEmpty {
+            return URL(fileURLWithPath: expandingHome(value, home: home), isDirectory: true)
+        }
+        let config = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"].flatMap {
+            $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true)
+        } ?? home.appendingPathComponent(".config", isDirectory: true)
+        guard let text = try? String(contentsOf: config.appendingPathComponent("user-dirs.dirs"),
+                                    encoding: .utf8) else { return nil }
+        for line in text.split(separator: "\n") where line.hasPrefix("XDG_MUSIC_DIR=") {
+            let raw = line.dropFirst("XDG_MUSIC_DIR=".count)
+                .trimmingCharacters(in: .whitespaces)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            guard !raw.isEmpty else { continue }
+            return URL(fileURLWithPath: expandingHome(raw, home: home), isDirectory: true)
+        }
+        return nil
+    }
+
+    private static func expandingHome(_ path: String, home: URL) -> String {
+        if path == "$HOME" || path == "~" { return home.path }
+        for prefix in ["$HOME/", "~/"] where path.hasPrefix(prefix) {
+            return home.appendingPathComponent(String(path.dropFirst(prefix.count))).path
+        }
+        return path
     }
 
     var databaseDisplayPath: String { recordingsDirectory.path }

@@ -104,6 +104,22 @@ public final class RecordingSession {
     private var pausedAt: Date?
     private var totalPaused: TimeInterval = 0
 
+    // The watchdog. Upstream's timeout and backoff values, kept here because
+    // the file that holds them upstream is AVFoundation-bound and excluded.
+    private var micStall = CaptureStallDetector(timeout: 12)
+    private var systemStall = CaptureStallDetector(timeout: 12)
+    private var restarts = RebuildThrottle(minimumInterval: 1, maximumInterval: 30)
+    private var watchdog: Task<Void, Never>?
+    private var micDeviceID: String?
+    private var appTarget: AudioCaptureTarget?
+
+    /// Raised when capture died and could not be brought back, so the UI can
+    /// say so instead of writing silence. Upstream names the device in the
+    /// same situation.
+    public var onCaptureLost: ((String) -> Void)?
+    /// Counts recoveries, for the diagnostic report and for tests.
+    public private(set) var recoveredCaptures = 0
+
     public init(microphone: MicrophoneCapture, appAudio: AppAudioCapture?) {
         self.microphone = microphone
         self.appAudio = appAudio
@@ -113,6 +129,10 @@ public final class RecordingSession {
                       micDeviceID: String? = nil, appTarget: AudioCaptureTarget? = nil) throws {
         guard state == .idle else { return }
         self.source = source
+        self.micDeviceID = micDeviceID
+        self.appTarget = appTarget
+        micStall.reset()
+        systemStall.reset()
         mixer = MeetingMixer()
         do {
             writer = try WAVFileWriter(url: outputURL)
@@ -143,6 +163,7 @@ public final class RecordingSession {
             throw error
         }
         startTime = Date()
+        startWatchdog()
         pausedAt = nil
         totalPaused = 0
         captureEpoch += 1
@@ -169,11 +190,81 @@ public final class RecordingSession {
         state = .recording
     }
 
+    // MARK: The capture watchdog
+
+    /// A microphone can stop delivering without saying so: the device is
+    /// unplugged, the profile switches, the server restarts. Upstream watches
+    /// the frame count for exactly this and rebuilds the engine when it stops
+    /// moving. The port does the same, one second at a time, and throttles the
+    /// restarts so a device that fails immediately cannot spin.
+    private func startWatchdog() {
+        watchdog?.cancel()
+        watchdog = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self else { return }
+                await self.checkForStalls()
+            }
+        }
+    }
+
+    private func checkForStalls() async {
+        guard state == .recording else { return }
+        let now = Date()
+
+        if let session = micSession, micStall.observe(frames: session.capturedFrameCount, now: now) {
+            await restartMicrophone(now: now)
+        }
+        if let session = systemSession, systemStall.observe(frames: session.capturedFrameCount, now: now) {
+            await restartSystemAudio(now: now)
+        }
+    }
+
+    private func restartMicrophone(now: Date) async {
+        guard restarts.allow(now: now) else { return }
+        micStall.reset()
+        micTask?.cancel()
+        micSession?.stop()
+        micSession = nil
+        do {
+            let session = try microphone.start(deviceID: micDeviceID)
+            micSession = session
+            micTask = Task { [weak self] in
+                for await chunk in session.samples { await self?.consumeMic(chunk) }
+            }
+            recoveredCaptures += 1
+            captureEpoch += 1
+        } catch {
+            onCaptureLost?("The microphone stopped responding and could not be reopened. \(error.localizedDescription)")
+        }
+    }
+
+    private func restartSystemAudio(now: Date) async {
+        guard let appAudio, let appTarget, restarts.allow(now: now) else { return }
+        systemStall.reset()
+        systemTask?.cancel()
+        systemSession?.stop()
+        systemSession = nil
+        do {
+            let session = try appAudio.start(target: appTarget)
+            systemSession = session
+            systemTask = Task { [weak self] in
+                for await chunk in session.samples { await self?.consumeSystem(chunk) }
+            }
+            recoveredCaptures += 1
+            captureEpoch += 1
+        } catch {
+            onCaptureLost?("The application's audio stopped and could not be reopened. \(error.localizedDescription)")
+        }
+    }
+
     @discardableResult
     public func stop() -> URL? {
         guard state == .recording || state == .paused else { return fileURL }
         state = .stopping
         lastMicFrameCount = micSession?.capturedFrameCount ?? 0
+        watchdog?.cancel()
+        watchdog = nil
         tearDown()
         emit(mixer.drainTail())
         try? writer?.close()

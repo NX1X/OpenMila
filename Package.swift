@@ -122,12 +122,15 @@ let package = Package(
         .systemLibrary(name: "CX11", path: "Port/CX11", pkgConfig: "x11", providers: [.apt(["libx11-dev"])]),
         .systemLibrary(name: "CSecret", path: "Port/CSecret", pkgConfig: "libsecret-1",
                        providers: [.apt(["libsecret-1-dev"])]),
+        .systemLibrary(name: "CGio", path: "Port/CGio", pkgConfig: "gio-2.0",
+                       providers: [.apt(["libglib2.0-dev"])]),
         .target(
             name: "LinuxPlatform",
             dependencies: [
                 "PlatformKit", "AudioCapture", "Updater",
                 .target(name: "CX11", condition: .when(platforms: [.linux])),
                 .target(name: "CSecret", condition: .when(platforms: [.linux])),
+                .target(name: "CGio", condition: .when(platforms: [.linux])),
             ],
             path: "Port/LinuxPlatform"
         ),
@@ -145,6 +148,12 @@ let package = Package(
                 .linkedLibrary("advapi32", .when(platforms: [.windows])),
                 .linkedLibrary("ole32", .when(platforms: [.windows])),
                 .linkedLibrary("wintrust", .when(platforms: [.windows])),
+                // ActivateAudioInterfaceAsync, for per-application capture.
+                .linkedLibrary("mmdevapi", .when(platforms: [.windows])),
+                // The interface GUIDs the audio client needs. The SDK
+                // declares them EXTERN_C rather than with DEFINE_GUID, so
+                // INITGUID cannot instantiate them and they come from here.
+                .linkedLibrary("uuid", .when(platforms: [.windows])),
             ]
         ),
         .target(
@@ -229,7 +238,7 @@ let package = Package(
                 // Everything at the root that is not this target's business.
                 "Packages", "MilaTests", "MilaUITests", "MilaMCP", "Port/Shims", "Port/Tests",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/Tests/UpdaterTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/WindowsPlatform", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/Tests/UpdaterTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/CGio", "Port/WindowsPlatform", "docs",
                 "docs", "docs-internal", "scripts", "docker", "skills", "bugbot-rules",
                 "RELEASE_NOTES", "Makefile", "project.yml", "README.md", "CHANGES.md",
                 "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md",
@@ -272,7 +281,7 @@ let package = Package(
             exclude: existing([
                 "Packages", "Mila", "MilaUITests", "MilaMCP", "Port/Shims", "Port/CoreTwins",
                 "Port/PlatformKit", "Port/CMiniaudio", "Port/AudioCapture", "Port/CLI", "Port/COpenMilaPosix", "Port/Spikes", "ci",
-                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/Tests/UpdaterTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/WindowsPlatform", "docs",
+                "Port/Recording", "Port/Tests/RecordingTests", "Port/Tests/StretchTests", "Port/Tests/UpdaterTests", "Port/MCP", "Port/Updater", "Port/Dictation", "Port/SelfTest", "Port/CX11", "Port/LinuxPlatform", "Port/Tests/LinuxPlatformTests", "Port/App", "Port/CWinShim", "Port/CSecret", "Port/CGio", "Port/WindowsPlatform", "docs",
                 "Port/Tests/ShimTests", "docs", "docs-internal", "scripts", "docker", "skills",
                 "bugbot-rules", "RELEASE_NOTES", "Makefile", "project.yml", "README.md",
                 "CHANGES.md", "CLAUDE.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md",
@@ -354,5 +363,9 @@ let package = Package(
             ],
             path: "Port/Tests/ShimTests"
         ),
-    ]
+    ],
+    // Port/CWinShim/om_process_loopback.cpp is C++ so that the audio
+    // interface GUIDs come from the SDK through __uuidof rather than being
+    // copied in by hand; everything it exports keeps C linkage.
+    cxxLanguageStandard: .cxx17
 )

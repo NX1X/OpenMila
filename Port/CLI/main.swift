@@ -157,9 +157,9 @@ case "gpu":
     // A software Vulkan device (llvmpipe, lavapipe) is reported but refused:
     // running the model on the CPU pretending to be a GPU is slower than the
     // CPU backend itself.
-    print("vulkan: \(VulkanAvailability.device.description)")
-    print("whisper will use: \(VulkanAvailability.device.isUsableGPU ? "the GPU" : "the CPU")")
-    if !VulkanAvailability.device.isUsableGPU {
+    print("vulkan: \(VulkanAvailability.summary)")
+    print("whisper will use: \(VulkanAvailability.usesGPU ? "the GPU" : "the CPU")")
+    if !VulkanAvailability.usesGPU {
         print("set OPENMILA_DISABLE_GPU=1 to refuse the GPU even when one is present")
     }
 
@@ -175,6 +175,23 @@ case "logs":
 case "notify":
     host.notifier.notify(title: "OpenMila", body: args.dropFirst().joined(separator: " ").isEmpty ? "Notification test" : args.dropFirst().joined(separator: " "))
     print("sent")
+
+case "grant-typing":
+    // The Wayland portal asks once, with a dialog. This is that request, so
+    // the permission can be granted deliberately rather than in the middle of
+    // a dictation.
+    #if os(Linux)
+    let injector = LinuxTextInjector(notifier: host.notifier,
+                                     stateDirectory: host.paths.dataDirectory)
+    if injector.canTypeWithoutHelp {
+        print("typing already works on this session")
+    } else {
+        print("asking the desktop for permission to type (answer the dialog)...")
+        print(injector.requestTypingPermission() ? "granted" : "not granted")
+    }
+    #else
+    print("this command is for Wayland sessions on Linux")
+    #endif
 
 case "inject":
     let text = args.dropFirst().joined(separator: " ")
@@ -192,12 +209,32 @@ case "inhibit":
     print("released")
 
 case "hotkey":
-    guard let hotkeys = host.hotkeys else { fail("this system has no global hotkeys (on Linux: no X11 display)") }
+    guard let hotkeys = host.hotkeys else { fail("this system offers no global shortcuts: no X display, and no desktop portal that implements GlobalShortcuts") }
+    print("backend: \(type(of: hotkeys))")
     let chord = HotkeyChord(key: option("--key", in: args) ?? "2", modifiers: [.control, .alt])
     let result = await hotkeys.register(id: "test", chord: chord) { print("pressed \(chord.displayName)") }
     print("register \(chord.displayName): \(result). Waiting 15s for presses...")
     try? await Task.sleep(nanoseconds: 15_000_000_000)
     await hotkeys.unregister(id: "test")
+
+case "windows":
+    // What the window-title signal can see on this session. Empty on a pure
+    // Wayland session by design: a client cannot see another client's windows.
+    // Windows has no such restriction, so a browser-tab meeting is visible
+    // there whatever the session.
+    #if os(Linux)
+    let titles = X11WindowTitles.all()
+    #elseif os(Windows)
+    let titles = WindowsWindowTitles.all()
+    #else
+    let titles: [String] = []
+    #endif
+    print("window titles visible: \(titles.count)")
+    for title in titles.prefix(25) { print("  \(title)") }
+    let fromTitles = MeetingTitles.meetings(inTitles: titles)
+    print(fromTitles.isEmpty
+          ? "no meeting in a window title"
+          : "meetings in titles: \(fromTitles.map(\.appName).joined(separator: ", "))")
 
 case "meetings":
     guard let signals = host.meetings else { fail("this system has no meeting detection") }
@@ -258,5 +295,5 @@ case "transcribe":
     } catch { fail("\(error.localizedDescription)") }
 
 default:
-    print("usage: openmila-cli devices | app-audio | gpu | logs | play | notify | inject | inhibit | hotkey | meetings | update-check | session | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
+    print("usage: openmila-cli devices | app-audio | gpu | windows | grant-typing | logs | play | notify | inject | inhibit | hotkey | meetings | update-check | session | record [--seconds N] [--lang en|he] [--model path] [--device id] [--out file.wav] | transcribe <file.wav> --model path [--lang en|he]")
 }

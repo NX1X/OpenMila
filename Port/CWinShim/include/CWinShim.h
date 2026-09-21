@@ -18,6 +18,11 @@
 
 #include <stdint.h>
 
+// SwiftPM treats include/CWinShim.h as this target's umbrella header, so a
+// header that is not reached from here is invisible to Swift however public
+// the directory is.
+#include "om_process_loopback.h"
+
 /// `HWND_MESSAGE`: the parent that makes a window message-only.
 void *om_hwnd_message(void);
 

@@ -9,9 +9,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERSION="${1:-$(grep -oE 'static let version = "[^"]+"' "$ROOT/Port/App/Sources/AppModel.swift" | sed -E 's/.*"([^"]+)"/\1/')}"
-# Debian versions may not contain "+port" segments with uppercase or spaces;
-# keep the upstream version and replace the port marker with a tilde-free form.
-DEB_VERSION="$(echo "$VERSION" | tr '+' '~' | tr -d ' ')"
+# The version goes through unchanged apart from spaces. It used to turn "+"
+# into "~", which dpkg orders correctly but GitHub does not keep: a release
+# asset named ...2~port.0... is published as ...2.port.0..., so the SHA256SUMS
+# the release ships named a file that did not exist and `sha256sum -c` failed
+# on the one package it covered. dpkg orders "+port.0" before "+port.1" and
+# before the plain upstream version, which is what the scheme needs.
+DEB_VERSION="$(echo "$VERSION" | tr -d ' ')"
 OUT="$ROOT/dist"
 APPDIR="$OUT/OpenMila.AppDir"
 STAGE="$OUT/deb/openmila_${DEB_VERSION}_amd64"
@@ -26,6 +30,8 @@ mkdir -p "$STAGE/opt/openmila" "$STAGE/usr/bin" "$STAGE/usr/share/applications" 
 cp -r "$APPDIR/usr/bin/." "$STAGE/opt/openmila/"
 cp -r "$APPDIR/usr/lib" "$STAGE/opt/openmila/lib"
 cp "$APPDIR/usr/share/applications/io.github.nx1x.openmila.desktop" "$STAGE/usr/share/applications/"
+mkdir -p "$STAGE/usr/share/mime/packages"
+cp "$APPDIR/usr/share/mime/packages/io.github.nx1x.openmila.xml" "$STAGE/usr/share/mime/packages/"
 # Every size the AppDir carries, not just 256: the icon cache and the panels
 # that ask for 16 or 24 pixels should get a file drawn at that size.
 for dir in "$APPDIR"/usr/share/icons/hicolor/*/apps; do
@@ -76,6 +82,9 @@ fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -q /usr/share/icons/hicolor || true
 fi
+if command -v update-mime-database >/dev/null 2>&1; then
+  update-mime-database /usr/share/mime || true
+fi
 POSTINST
 chmod 755 "$STAGE/DEBIAN/postinst"
 
@@ -90,6 +99,9 @@ if command -v update-desktop-database >/dev/null 2>&1; then
 fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -q /usr/share/icons/hicolor || true
+fi
+if command -v update-mime-database >/dev/null 2>&1; then
+  update-mime-database /usr/share/mime || true
 fi
 POSTRM
 chmod 755 "$STAGE/DEBIAN/postrm"

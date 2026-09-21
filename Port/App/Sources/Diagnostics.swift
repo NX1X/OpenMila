@@ -24,8 +24,8 @@ enum Diagnostics {
         os=\(info.operatingSystemVersionString)
         arch=\(OpenMilaLog.architecture) cores=\(info.activeProcessorCount) ram_gb=\(info.physicalMemory / 1_073_741_824)
         session=\(info.environment["XDG_SESSION_TYPE"] ?? "?") desktop=\(info.environment["XDG_CURRENT_DESKTOP"] ?? "?")
-        whisper_backend=\(VulkanAvailability.device.isUsableGPU ? "Vulkan" : "CPU")
-        gpu_probe=\(VulkanAvailability.device.description)
+        whisper_backend=\(VulkanAvailability.usesGPU ? "Vulkan" : "CPU")
+        gpu_probe=\(VulkanAvailability.summary)
         generated=\(stamp)
         """
         try system.write(to: payload.appendingPathComponent("system.txt"), atomically: true, encoding: .utf8)

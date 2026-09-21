@@ -13,6 +13,20 @@ import Updater
 public enum LinuxPlatform {
     public static let repository = "NX1X/OpenMila"
 
+    /// Global shortcuts, by whatever route this session allows.
+    ///
+    /// X11 lets a client grab a combination for itself, which is immediate and
+    /// needs no dialog, so it is preferred when an X display is there (that
+    /// includes XWayland, where the grab only reaches X clients). A pure
+    /// Wayland session has no such mechanism at all: the compositor owns
+    /// input, and the GlobalShortcuts portal is the only way, at the cost of
+    /// one confirmation dialog the first time.
+    static func hotkeys() -> GlobalHotkeys? {
+        if X11Hotkeys.isAvailable, let x11 = try? X11Hotkeys() { return x11 }
+        if let portal = PortalHotkeys() { return portal }
+        return nil
+    }
+
     /// Everything the app needs from Linux, assembled once at launch.
     public static func services(appVersion: String) -> PlatformServices {
         let paths = LinuxAppPaths()
@@ -20,8 +34,9 @@ public enum LinuxPlatform {
         return PlatformServices(
             microphone: MiniaudioMicrophone(),
             appAudio: LinuxAppAudioCapture(),
-            hotkeys: X11Hotkeys.isAvailable ? try? X11Hotkeys() : nil,
-            textInjector: LinuxTextInjector(notifier: notifier),
+            hotkeys: Self.hotkeys(),
+            textInjector: LinuxTextInjector(notifier: notifier,
+                                            stateDirectory: paths.dataDirectory),
             secrets: LinuxSecretStore(fallbackDirectory: paths.dataDirectory.appendingPathComponent("secrets", isDirectory: true)),
             sleep: LinuxSleepInhibitor(),
             paths: paths,

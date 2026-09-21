@@ -24,7 +24,7 @@ enum AppIdentity {
     // `<upstream>+port.N`: port 0 of Mila v1.9.5-beta.2. The prerelease part
     // comes from upstream's own version, so the updater's beta channel treats
     // this build as a beta, which it is.
-    static let version = "1.9.5-beta.2+port.0"
+    static let version = "1.9.5-beta.2+port.1"
     static let upstreamVersion = "1.9.5-beta.2"
     static let repository = "NX1X/OpenMila"
     static let website = "https://openmila.nx1xlab.dev"
@@ -42,6 +42,7 @@ final class AppModel {
     let platform: PlatformServices
     let store: RecordingStore
     let storageSettings: RecordingStorageSettings
+    let gpu: GPUSettings
     let modelManager: ModelManager
     let languageSettings: RecordingLanguageSettings
     let diarizationSettings: DiarizationSettings
@@ -80,6 +81,9 @@ final class AppModel {
         try? FileManager.default.createDirectory(at: platform.paths.dataDirectory, withIntermediateDirectories: true)
 
         storageSettings = RecordingStorageSettings()
+        // Before anything loads a model: the engine reads the flag on every
+        // load, and the first load can happen as soon as the window is up.
+        gpu = GPUSettings()
         store = RecordingStore(rootDirectory: platform.paths.dataDirectory,
                                customRecordingsDirectory: storageSettings.customDirectory)
         modelManager = ModelManager(modelsDirectory: platform.paths.dataDirectory.appendingPathComponent("Models", isDirectory: true))

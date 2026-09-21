@@ -229,8 +229,10 @@ public final class WindowsFolderWatcher: FolderWatcher, @unchecked Sendable {
     deinit { stop() }
 }
 
-/// Meeting apps detected from the process list. Upstream keys on Core Audio
-/// process taps plus window titles; the process list is the portable signal.
+/// Meeting apps detected from the process list and from window captions.
+/// Upstream keys on Core Audio process taps plus window titles; here the
+/// process list finds an installed application and the captions find a meeting
+/// that lives in a browser tab, which has no process of its own.
 public struct WindowsMeetingSignals: MeetingSignals {
     static let known: [(process: String, appName: String, appKey: String)] = [
         ("zoom.exe", "Zoom", "zoom"),
@@ -238,9 +240,23 @@ public struct WindowsMeetingSignals: MeetingSignals {
         ("ms-teams.exe", "Microsoft Teams", "teams"),
     ]
 
-    public init() {}
+    private let titles: () -> [String]
+
+    public init(titles: @escaping () -> [String] = WindowsWindowTitles.all) {
+        self.titles = titles
+    }
 
     public func activeMeetings() async -> [DetectedMeeting] {
+        var found = processMeetings()
+        // The same patterns the Linux layer matches, so a Google Meet or
+        // Proton Meet tab is recognised on both systems.
+        for meeting in MeetingTitles.meetings(inTitles: titles()) where !found.contains(meeting) {
+            found.append(meeting)
+        }
+        return found
+    }
+
+    private func processMeetings() -> [DetectedMeeting] {
         let snapshot = CreateToolhelp32Snapshot(DWORD(TH32CS_SNAPPROCESS), 0)
         guard let snapshot, snapshot != INVALID_HANDLE_VALUE else { return [] }
         defer { CloseHandle(snapshot) }

@@ -29,7 +29,7 @@ enum AudioCompressor {
             case .makeBuffer:
                 return "Could not allocate an audio buffer."
             case .encoderUnavailable:
-                return "Audio conversion needs ffmpeg, which was not found. Install ffmpeg and try again."
+                return "Audio conversion needs ffmpeg or GStreamer, and neither was found. Install ffmpeg and try again."
             case .encoderFailed(let status):
                 return "Audio conversion failed (ffmpeg exited with status \(status))."
             case .encoderTimedOut:
@@ -45,6 +45,15 @@ enum AudioCompressor {
         try await Task.detached(priority: .utility) {
             if FileManager.default.fileExists(atPath: destURL.path) {
                 try? FileManager.default.removeItem(at: destURL)
+            }
+            if locateEncoder() == nil, let pipeline = locateGStreamer() {
+                try runGStreamer(pipeline, [
+                    "filesrc", "location=\(wavURL.path)", "!", "wavparse", "!", "audioconvert", "!",
+                    "audioresample", "!", "avenc_aac", "bitrate=32000", "!", "mp4mux", "!",
+                    "filesink", "location=\(destURL.path)",
+                ])
+                compressorLog.log("compressed with GStreamer (no ffmpeg on this machine)")
+                return
             }
             try runEncoder([
                 "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
@@ -64,6 +73,15 @@ enum AudioCompressor {
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("openmila-decode-\(UUID().uuidString).wav")
         do {
+            if locateEncoder() == nil, let pipeline = locateGStreamer() {
+                try runGStreamer(pipeline, [
+                    "filesrc", "location=\(url.path)", "!", "decodebin", "!", "audioconvert", "!",
+                    "audioresample", "!",
+                    "audio/x-raw,format=F32LE,channels=1,rate=16000", "!", "wavenc", "!",
+                    "filesink", "location=\(temp.path)",
+                ])
+                return temp
+            }
             try runEncoder([
                 "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
                 "-i", url.path,
@@ -75,6 +93,36 @@ enum AudioCompressor {
             throw error
         }
         return temp
+    }
+
+    // MARK: - GStreamer, the second route
+
+    /// `gst-launch-1.0`, which a GNOME or KDE install almost always has even
+    /// where ffmpeg does not, so AAC recordings and imported files work on a
+    /// machine that never installed ffmpeg. ffmpeg stays the first choice: one
+    /// command, no pipeline to get wrong.
+    static func locateGStreamer() -> URL? {
+        if let gstreamerOverride { return gstreamerOverride }
+        #if os(Windows)
+        let name = "gst-launch-1.0.exe"
+        let separator: Character = ";"
+        #else
+        let name = "gst-launch-1.0"
+        let separator: Character = ":"
+        #endif
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        for directory in path.split(separator: separator) where !directory.isEmpty {
+            let candidate = URL(fileURLWithPath: String(directory)).appendingPathComponent(name)
+            if FileManager.default.isExecutableFile(atPath: candidate.path) { return candidate }
+        }
+        return nil
+    }
+
+    /// Overridable for the same reason as `encoderOverride`.
+    static var gstreamerOverride: URL??
+
+    private static func runGStreamer(_ tool: URL, _ arguments: [String], timeout: TimeInterval = 600) throws {
+        try run(tool, ["-q"] + arguments, timeout: timeout)
     }
 
     // MARK: - ffmpeg
@@ -99,9 +147,17 @@ enum AudioCompressor {
     }
 
     private static func runEncoder(_ arguments: [String], timeout: TimeInterval = 600) throws {
-        guard let encoder = locateEncoder() else { throw CompressError.encoderUnavailable }
+        guard let encoder = locateEncoder() else {
+            // Only now is it truly unavailable: the GStreamer route is tried
+            // before this is called.
+            throw CompressError.encoderUnavailable
+        }
+        try run(encoder, arguments, timeout: timeout)
+    }
+
+    private static func run(_ tool: URL, _ arguments: [String], timeout: TimeInterval) throws {
         let process = Process()
-        process.executableURL = encoder
+        process.executableURL = tool
         process.arguments = arguments
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice

@@ -23,6 +23,8 @@ import Foundation
 import Glibc
 #elseif canImport(Musl)
 import Musl
+#elseif os(Windows)
+import WinSDK
 #endif
 
 public enum VulkanAvailability {
@@ -51,6 +53,24 @@ public enum VulkanAvailability {
     /// Probed once: the answer cannot change while the process runs, and the
     /// probe creates and destroys a Vulkan instance, which is not free.
     public static let device: Device = probe()
+
+    /// The user's decision, which is a different thing from what the machine
+    /// has. Vulkan drivers vary in quality, so someone who hits a driver bug
+    /// needs a switch rather than a reinstall; `OPENMILA_DISABLE_GPU=1` is the
+    /// same decision taken before the process starts. Set once at launch from
+    /// the app's settings, read on every model load.
+    nonisolated(unsafe) public static var userDisabledGPU = false
+
+    /// What whisper.cpp is actually asked for: a real device the user has not
+    /// turned off.
+    public static var usesGPU: Bool { !userDisabledGPU && device.isUsableGPU }
+
+    /// One line for Settings, the diagnostic report and the CLI, so all three
+    /// say the same thing.
+    public static var summary: String {
+        guard userDisabledGPU, device.isUsableGPU else { return device.description }
+        return "\(device.description); turned off in Settings"
+    }
 
     // MARK: The probe
 
@@ -92,20 +112,37 @@ public enum VulkanAvailability {
         if ProcessInfo.processInfo.environment["OPENMILA_DISABLE_GPU"] == "1" {
             return .none(reason: "OPENMILA_DISABLE_GPU=1")
         }
+        // The loader is opened by name at run time, never linked, so a build
+        // with the Vulkan backend still runs where Vulkan is absent. The two
+        // systems spell that differently and nothing else here differs.
         #if os(Windows)
         let libraryName = "vulkan-1.dll"
+        guard let library = LoadLibraryW(libraryName.withCString(encodedAs: UTF16.self) { $0 }) else {
+            return .none(reason: "\(libraryName) is not installed")
+        }
+        defer { FreeLibrary(library) }
+        // GetProcAddress hands back FARPROC, which Swift types as a function
+        // taking nothing and returning Int64. Every symbol below is called
+        // through its own signature, so the address is what matters.
+        let symbol: (String) -> UnsafeMutableRawPointer? = { name in
+            name.withCString { cName in
+                guard let address = GetProcAddress(library, cName) else { return nil }
+                return unsafeBitCast(address, to: UnsafeMutableRawPointer?.self)
+            }
+        }
         #else
         let libraryName = "libvulkan.so.1"
-        #endif
         guard let library = dlopen(libraryName, RTLD_NOW) else {
             return .none(reason: "\(libraryName) is not installed")
         }
         defer { dlclose(library) }
+        let symbol: (String) -> UnsafeMutableRawPointer? = { dlsym(library, $0) }
+        #endif
 
-        guard let createSymbol = dlsym(library, "vkCreateInstance"),
-              let enumerateSymbol = dlsym(library, "vkEnumeratePhysicalDevices"),
-              let propertiesSymbol = dlsym(library, "vkGetPhysicalDeviceProperties"),
-              let destroySymbol = dlsym(library, "vkDestroyInstance") else {
+        guard let createSymbol = symbol("vkCreateInstance"),
+              let enumerateSymbol = symbol("vkEnumeratePhysicalDevices"),
+              let propertiesSymbol = symbol("vkGetPhysicalDeviceProperties"),
+              let destroySymbol = symbol("vkDestroyInstance") else {
             return .none(reason: "the Vulkan loader is missing its entry points")
         }
         let createInstance = unsafeBitCast(createSymbol, to: CreateInstance.self)

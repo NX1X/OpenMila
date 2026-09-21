@@ -21,13 +21,37 @@ public struct LinuxTextInjector: TextInjector {
 
     private let environment: [String: String]
     private let notifier: Notifier
+    /// The portal route, which is the only one a pure Wayland session has when
+    /// no typing tool is installed. Built lazily: creating it asks the desktop
+    /// a question, and there is no reason to ask before the first dictation.
+    private let portal: PortalTextInjector?
 
-    public init(notifier: Notifier, environment: [String: String] = ProcessInfo.processInfo.environment) {
+    public init(notifier: Notifier,
+                environment: [String: String] = ProcessInfo.processInfo.environment,
+                stateDirectory: URL? = nil) {
         self.notifier = notifier
         self.environment = environment
+        if let stateDirectory {
+            portal = PortalTextInjector(stateDirectory: stateDirectory)
+        } else {
+            portal = nil
+        }
     }
 
     var isWayland: Bool { environment["XDG_SESSION_TYPE"] == "wayland" || environment["WAYLAND_DISPLAY"] != nil }
+
+    /// Asks the desktop for permission to type, which shows a dialog. Meant
+    /// for a Settings button; dictation never calls it.
+    @discardableResult
+    public func requestTypingPermission() -> Bool {
+        guard isWayland, let portal, PortalTextInjector.isAvailable else { return false }
+        return portal.requestPermission()
+    }
+
+    public var canTypeWithoutHelp: Bool {
+        if availableTypingTool() != nil { return true }
+        return isWayland && (portal?.isGranted ?? false)
+    }
 
     public func inject(_ text: String) async -> TextInjectionOutcome {
         guard copyToClipboard(text) else {
@@ -36,8 +60,15 @@ public struct LinuxTextInjector: TextInjector {
         if let tool = availableTypingTool(), typeWith(tool, text: text) {
             return .injected
         }
-        notifier.notify(title: "Dictation ready",
-                        body: "The text is on the clipboard. Press Ctrl+V to paste it.")
+        // No tool, or the tool failed. On Wayland the portal can still type,
+        // once the user has allowed it; it never stops here to ask.
+        if isWayland, let portal, PortalTextInjector.isAvailable, portal.paste() {
+            return .injected
+        }
+        let hint = (isWayland && portal?.isGranted == false)
+            ? "The text is on the clipboard. Press Ctrl+V to paste it, or allow typing in Settings to have it pasted for you."
+            : "The text is on the clipboard. Press Ctrl+V to paste it."
+        notifier.notify(title: "Dictation ready", body: hint)
         return .leftOnClipboard
     }
 

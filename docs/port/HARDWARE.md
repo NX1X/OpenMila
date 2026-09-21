@@ -17,21 +17,32 @@ GPU when the machine turns out to have a usable one.**
 
 | | macOS (Mila) | Linux (OpenMila) | Windows (OpenMila) |
 |---|---|---|---|
-| Whole model | Metal GPU | **CPU** | **CPU** |
-| Encoder | CoreML on the ANE | CPU | CPU |
-| Build flags | Metal on | whisper.cpp built with no GPU backend | same |
-| Runtime switch | `use_gpu = true` | `use_gpu = false` (no `canImport(Metal)`) | same |
+| Whole model | Metal GPU | Vulkan when a real device answers, else CPU | same |
+| Encoder | CoreML on the ANE | with the model | with the model |
+| Build flags | Metal on | `-DGGML_VULKAN=ON` in the release build | `-DGGML_VULKAN=ON`, Ninja generator |
+| Runtime decision | `use_gpu = true` | `VulkanAvailability`: GPU, software, or none | same |
+| User override | none needed | Settings toggle, or `OPENMILA_DISABLE_GPU=1` | same |
 
-So on this release, a GPU changes nothing: a machine with an RTX 4090 and a
-machine with none run transcription at the same speed, on the processor. That
-is honest but it is not where the port should stay, and it is the largest
-performance gap against the Mac build.
+The release packages carry the Vulkan backend on both systems, and the app
+asks the machine what it has before using it:
 
-The parts of the product that were never GPU work are unaffected: speaker
-diarization runs pyannote on the CPU on every system, including macOS, and the
-AI summaries are whatever provider the user chose.
+- a discrete, integrated or virtual **GPU** gets the model;
+- a **software** Vulkan device (llvmpipe, lavapipe, SwiftShader) is refused,
+  because running the model through the CPU pretending to be a GPU is slower
+  than whisper.cpp's own CPU backend;
+- **no Vulkan** at all is not an error: the CPU path is the fallback and the
+  common case.
 
-## What CPU-only actually costs
+`openmila-cli gpu` prints the probe's answer, Settings shows it under Models,
+and the diagnostic report carries it. The switch is there for a bad driver.
+
+**What has not happened: a measurement.** The decision logic is tested and the
+backend is compiled in, but no transcription has been timed on a real GPU on
+either system - the development machine has none, and the Windows machine has
+not run a model yet. So "Vulkan works" means "it is built, probed and wired",
+not "it is x times faster here". Benchmarks come from the beta.
+
+## What the CPU path costs
 
 Transcription with whisper.cpp scales with cores and memory bandwidth. On the
 port's development machine (10 vCPU, no GPU) the small fixtures in
@@ -41,8 +52,8 @@ port's development machine (10 vCPU, no GPU) the small fixtures in
 them exists yet on this hardware: they have not been benchmarked here, and a
 figure invented from another machine's results would be worse than none.
 Benchmarking those two models on a desktop CPU, a laptop CPU and one GPU
-machine each is the first task of the GPU work, so that the gain is measured
-rather than assumed.
+machine each is still open, and it is what turns "the GPU is wired up" into a
+number worth printing.
 
 ## The plan, in order
 
@@ -67,6 +78,35 @@ rather than assumed.
    no backend for them worth shipping today. `.mlmodelc` downloads stay
    skipped off macOS, as they are now.
 
-Until step 1 lands, `docs/port/PARITY.md` row 19 says CPU on both systems, and
-the release notes say the same. Nobody should install OpenMila expecting their
-graphics card to be used yet.
+Step 1 has landed. Steps 2 and 3 landed with it: Settings names the backend
+and carries the override. What is left is CUDA (4), which stays optional, and
+the measurements above.
+
+## What a machine needs
+
+No Mac-class floor exists here, because these systems run on anything. These
+are the honest numbers for the shipped models, which are large:
+
+| | Minimum | Comfortable |
+|---|---|---|
+| CPU | 4 cores, x86-64 | 8+ cores |
+| RAM | 8 GB | 16 GB |
+| Free disk | 6 GB (app plus both models plus recordings) | 20 GB |
+| GPU | none - the CPU path is fully supported | any Vulkan 1.0 device with a working driver |
+| Linux | GTK 4, glibc 2.39+ (Ubuntu 24.04 and newer); PipeWire for per-application audio | same, on a GNOME or KDE session |
+| Windows | Windows 11, or Windows 10 2004+ for per-application audio | Windows 11 |
+
+Where those numbers come from:
+
+- **Disk**: `ivrit-ai-whisper-large-v3` is 2.9 GB and
+  `openai-whisper-large-v3-turbo` is 1.6 GB as installed, plus a ~75 MB
+  package and the diarization runtime when it is enabled (torch is downloaded
+  on first use and is over 1 GB).
+- **RAM**: a `large-v3` model is loaded whole. 8 GB works; it is tight while a
+  browser is open.
+- **Live AI** has its own floor, inherited from upstream: fewer than 8 logical
+  cores or less than 12 GB of RAM counts as the constrained class and the
+  rolling summary is gated off (`SystemCapabilities`). Transcription itself is
+  not gated.
+- **Diarization** runs pyannote on the CPU on every system, including macOS,
+  and is the slowest optional feature on a weak machine.

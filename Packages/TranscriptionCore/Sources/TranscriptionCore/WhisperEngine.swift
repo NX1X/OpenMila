@@ -157,12 +157,12 @@ public actor WhisperEngine {
         // depends on the machine: a real graphics device is worth using, a
         // software Vulkan implementation is slower than the CPU backend, and
         // no Vulkan at all is the common case. VulkanAvailability decides.
-        params.use_gpu = VulkanAvailability.device.isUsableGPU
+        params.use_gpu = VulkanAvailability.usesGPU
         params.flash_attn = false
         if params.use_gpu {
-            whisperNotice("GPU: \(VulkanAvailability.device.description)")
+            whisperNotice("GPU: \(VulkanAvailability.summary)")
         } else {
-            whisperNotice("CPU backend: \(VulkanAvailability.device.description)")
+            whisperNotice("CPU backend: \(VulkanAvailability.summary)")
         }
         #endif
 
