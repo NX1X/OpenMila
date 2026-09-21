@@ -220,13 +220,21 @@ case "hotkey":
 case "windows":
     // What the window-title signal can see on this session. Empty on a pure
     // Wayland session by design: a client cannot see another client's windows.
+    // Windows has no such restriction, so a browser-tab meeting is visible
+    // there whatever the session.
     #if os(Linux)
     let titles = X11WindowTitles.all()
+    #elseif os(Windows)
+    let titles = WindowsWindowTitles.all()
+    #else
+    let titles: [String] = []
+    #endif
     print("window titles visible: \(titles.count)")
     for title in titles.prefix(25) { print("  \(title)") }
-    #else
-    print("this command reads X11 window titles, which is a Linux signal")
-    #endif
+    let fromTitles = MeetingTitles.meetings(inTitles: titles)
+    print(fromTitles.isEmpty
+          ? "no meeting in a window title"
+          : "meetings in titles: \(fromTitles.map(\.appName).joined(separator: ", "))")
 
 case "meetings":
     guard let signals = host.meetings else { fail("this system has no meeting detection") }

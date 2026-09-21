@@ -26,16 +26,6 @@ public struct LinuxMeetingSignals: MeetingSignals {
         ("teams-for-linux", "Microsoft Teams", "teams"),
     ]
 
-    /// Window-title patterns, lowercased. Upstream matches the same meetings
-    /// in Chrome, Safari, Arc and Island; the browser does not matter here,
-    /// only what the tab calls itself.
-    static let knownTitles: [(needle: String, appName: String, appKey: String)] = [
-        ("meet.google.com", "Google Meet", "googleMeet"),
-        ("google meet", "Google Meet", "googleMeet"),
-        ("zoom meeting", "Zoom", "zoom"),
-        ("microsoft teams", "Microsoft Teams", "teams"),
-    ]
-
     private let procRoot: URL
     private let titles: () -> [String]
 
@@ -43,20 +33,6 @@ public struct LinuxMeetingSignals: MeetingSignals {
                 titles: @escaping () -> [String] = X11WindowTitles.all) {
         self.procRoot = procRoot
         self.titles = titles
-    }
-
-    /// The meetings a list of window titles implies. Pure, so it can be tested
-    /// without a display.
-    static func meetings(inTitles titles: [String]) -> [DetectedMeeting] {
-        var found: [DetectedMeeting] = []
-        for title in titles {
-            let haystack = title.lowercased()
-            for known in knownTitles where haystack.contains(known.needle) {
-                let meeting = DetectedMeeting(appName: known.appName, appKey: known.appKey)
-                if !found.contains(meeting) { found.append(meeting) }
-            }
-        }
-        return found
     }
 
     public func activeMeetings() async -> [DetectedMeeting] {
@@ -71,7 +47,9 @@ public struct LinuxMeetingSignals: MeetingSignals {
                 if !found.contains(meeting) { found.append(meeting) }
             }
         }
-        for meeting in Self.meetings(inTitles: titles()) where !found.contains(meeting) {
+        // Shared with the Windows layer, so both systems recognise the same
+        // tab meetings from the titles their own APIs can see.
+        for meeting in MeetingTitles.meetings(inTitles: titles()) where !found.contains(meeting) {
             found.append(meeting)
         }
         return found
