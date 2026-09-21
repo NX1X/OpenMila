@@ -115,9 +115,12 @@ func (m *OpenmilaCi) Sbom(
 	// +ignore=[".build", "Port/App/.build", "Port/Spikes/*/.build", "dist", "docs-internal", ".git"]
 	source *dagger.Directory,
 ) *dagger.File {
+	// "/syft", not "scan": Dagger runs the command given rather than the
+	// image's entrypoint, so the bare subcommand was being looked up as a
+	// program and the step failed with "executable file not found in $PATH".
 	return dag.Container().From(syftImage).
 		WithMountedDirectory("/src", source).
-		WithExec([]string{"scan", "dir:/src", "-o", "cyclonedx-json=/tmp/openmila-sbom.cdx.json"}).
+		WithExec([]string{"/syft", "scan", "dir:/src", "-o", "cyclonedx-json=/tmp/openmila-sbom.cdx.json"}).
 		File("/tmp/openmila-sbom.cdx.json")
 }
 
