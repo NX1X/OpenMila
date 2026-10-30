@@ -1,0 +1,6 @@
+2026-10-30T16:43:14.993Z notice io.github.nx1x.openmila OpenMila 1.9.5-beta.2+port.6 starting: os=Windows Server 2019 (build 26100) arch=x86_64 cores=4 ram=16GB locale=en_001 log_level=info private_logging=false log_file=D:/a/_temp/shots/localappdata/OpenMila/logs/openmila.log
+2026-10-30T16:43:15.017Z notice io.github.nx1x.openmila/models refreshInstalled: dir=C:/Users/runneradmin/AppData/Local/Mila/Models found=[]
+2026-10-30T16:43:15.037Z notice io.github.nx1x.openmila/RecordingSummarizer backfill: skipped — LLM not configured
+2026-10-30T16:43:47.264Z notice io.github.nx1x.openmila OpenMila 1.9.5-beta.2+port.6 starting: os=Windows Server 2019 (build 26100) arch=x86_64 cores=4 ram=16GB locale=en_001 log_level=info private_logging=false log_file=D:/a/_temp/shots/localappdata/OpenMila/logs/openmila.log
+2026-10-30T16:43:47.282Z notice io.github.nx1x.openmila/models refreshInstalled: dir=C:/Users/runneradmin/AppData/Local/Mila/Models found=[]
+2026-10-30T16:43:47.295Z notice io.github.nx1x.openmila/RecordingSummarizer backfill: skipped — LLM not configured
