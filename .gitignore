@@ -42,10 +42,12 @@ llm-artifacts/
 # --- OpenMila port ---
 # Internal plans and working notes; never published.
 docs-internal/
-# Claude Code files: local only, never published.
-CLAUDE.md
+# Claude Code files. CLAUDE.md is committed on purpose (decided 2026-10-30) so a
+# session anywhere, the cloud included, gets the port's rules; it points at the
+# private OpenMila-internal repository for everything else. Agents, skills and
+# rules under .claude/ stay local.
+!CLAUDE.md
 CLAUDE.local.md
-**/CLAUDE.md
 .claude/
 # Port build output
 build-linux/
