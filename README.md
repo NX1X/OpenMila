@@ -1,5 +1,21 @@
 # OpenMila
 
+> [!WARNING]
+> **OpenMila is no longer developed.**
+>
+> I no longer have the free time to keep developing this project.
+> [Vibe](https://github.com/thewh1teagle/vibe) has evolved impressively, and I
+> think it is the better product today. It is well maintained and runs on
+> Windows, Linux and macOS, so I recommend it instead:
+>
+> - Code: https://github.com/thewh1teagle/vibe
+> - Website: https://thewh1teagle.github.io/vibe/
+>
+> On a Mac, you can also use the original [Mila](https://github.com/island-io/mila).
+>
+> The code and the releases stay here as they are, under the Apache-2.0
+> licence. There will be no updates, no fixes and no support.
+
 [![Linux](https://github.com/NX1X/OpenMila/actions/workflows/openmila-linux.yml/badge.svg)](https://github.com/NX1X/OpenMila/actions/workflows/openmila-linux.yml)
 [![Windows](https://github.com/NX1X/OpenMila/actions/workflows/openmila-windows.yml/badge.svg)](https://github.com/NX1X/OpenMila/actions/workflows/openmila-windows.yml)
 [![CodeQL](https://github.com/NX1X/OpenMila/actions/workflows/codeql.yml/badge.svg)](https://github.com/NX1X/OpenMila/actions/workflows/codeql.yml)
@@ -24,25 +40,18 @@ Website: [openmila.nx1xlab.dev](https://openmila.nx1xlab.dev)
 OpenMila does not build for macOS and does not try to.
 
 ## Status
-What is left is the part only you can do: install +port.3 on both machines and use it. On Windows there should be no admin prompt, no console window, and the app should actually open this time. If anything goes wrong, the app writes to %LOCALAPPDATA%\OpenMila\logs on Windows and ~/.local/state/openmila/logs on Linux - that log is the fastest route to a diagnosis.
-Early development, not yet released. Follow the
-[releases page](https://github.com/NX1X/OpenMila/releases) for the first
-Linux beta.
 
-**Linux** is where the work happens: recording, transcription, diarization,
-dictation, AI summaries, the MCP server, per-application audio capture, the
-AppImage and the `.deb` all run day to day on Ubuntu 26.04.
+Development stopped in November 2026. The last release is
+`1.9.5-beta.2+port.6`, a beta that tracks Mila v1.9.5-beta.2.
 
-**Windows** builds and passes its tests in CI on `windows-2025` - the core,
-the CLI, the MCP helper, the app on the WinUI backend and a portable zip - but
-nobody has run any of it on a Windows desktop yet. Treat it as untested.
+- **Linux:** the beta ran day to day on Ubuntu 26.04.
+- **Windows:** the beta builds and passes its tests in CI on `windows-2025`.
+  It had little hands-on testing. Treat it as untested.
 
-[`docs/port/PARITY.md`](docs/port/PARITY.md) tracks every Mila feature with a
-per-system status and the evidence behind it, including what is still missing.
-[`docs/port/LOCAL-AI.md`](docs/port/LOCAL-AI.md) covers the one-button local AI
-setup, a port-only feature.
-[`docs/port/ROADMAP.md`](docs/port/ROADMAP.md) is the ordered list of what still
-stands between the current build and full parity, and what done means for each.
+The text below describes the project as it was when development stopped.
+[`docs/port/PARITY.md`](docs/port/PARITY.md) lists every Mila feature with its
+status for each system. [`docs/port/LOCAL-AI.md`](docs/port/LOCAL-AI.md) covers
+the one-button local AI setup, a port-only feature.
 
 ## Architecture
 
